@@ -1,0 +1,35 @@
+[[plugin]]
+id           = "nilsonlinux/link-ip-monitor"
+name         = "Link/IP Monitor"
+version      = "1.0.1"
+plugin_api   = 14
+author       = "Nilsonlinux"
+license      = "MIT"
+icon         = "activity"
+description  = "It pings a list of IPs, hosts, or links at intervals and notifies you when one goes down (or comes back up)."
+tags         = ["network", "indicator", "bar", "panel", "service"]
+dependencies = ["ping"]
+
+[[plugin]]
+id          = "nilsonlinux/rss-notifier"
+name        = "RSS/Atom Notifier"
+version     = "1.0.3"
+plugin_api  = 14
+author      = "Nilsonlinux"
+license     = "MIT"
+icon        = "rss"
+description = "Monitors RSS/Atom feeds and notifies you when new items appear."
+tags        = ["productivity", "utility", "indicator", "panel", "bar", "service"]
+dependencies = ["xdg-open"]
+
+[[plugin]]
+id          = "nilsonlinux/inventory-manager"
+name        = "Inventory Manager"
+version     = "1.0.0"
+plugin_api  = 14
+author      = "Nilsonlinux"
+license     = "MIT"
+icon        = "package"
+description = "Gerencia estoque de produtos com categorias e alertas de baixa"
+tags        = ["utility", "indicator", "panel", "bar", "service"]
+dependencies = []
