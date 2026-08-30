@@ -1,0 +1,112 @@
+id          = "nilsonlinux/inventory-manager"
+name        = "Inventory Manager"
+version     = "1.0.0"
+plugin_api  = 14
+author      = "Nilsonlinux"
+license     = "MIT"
+icon        = "package"
+description = "Gerencia estoque de produtos com categorias e alertas de baixa"
+tags        = ["utility", "inventory", "products", "panel", "bar", "service"]
+dependencies = []
+
+# ---------------------------------------------------------------------------
+# Plugin settings (shared by all entries)
+# ---------------------------------------------------------------------------
+
+[[setting]]
+key             = "low_stock_threshold"
+type            = "int"
+label_key       = "settings.low_stock_threshold.label"
+description_key = "settings.low_stock_threshold.description"
+default         = 3
+min             = 0
+max             = 50
+
+[[setting]]
+key             = "enable_low_stock_alerts"
+type            = "bool"
+label_key       = "settings.enable_low_stock_alerts.label"
+description_key = "settings.enable_low_stock_alerts.description"
+default         = true
+
+# ---------------------------------------------------------------------------
+# Store information (plugin settings)
+# ---------------------------------------------------------------------------
+
+[[setting]]
+key             = "store_name"
+type            = "string"
+label_key       = "settings.store_name.label"
+description_key = "settings.store_name.description"
+default         = ""
+
+[[setting]]
+key             = "store_number"
+type            = "string"
+label_key       = "settings.store_number.label"
+description_key = "settings.store_number.description"
+default         = ""
+
+[[setting]]
+key             = "store_cnpj"
+type            = "string"
+label_key       = "settings.store_cnpj.label"
+description_key = "settings.store_cnpj.description"
+default         = ""
+
+[[setting]]
+key             = "ti_name"
+type            = "string"
+label_key       = "settings.ti_name.label"
+description_key = "settings.ti_name.description"
+default         = ""
+
+[[setting]]
+key             = "export_folder"
+type            = "string"
+label_key       = "settings.export_folder.label"
+description_key = "settings.export_folder.description"
+default         = ""
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+
+[[service]]
+id    = "inventory-service"
+entry = "service.luau"
+
+# ---------------------------------------------------------------------------
+# Widget
+# ---------------------------------------------------------------------------
+
+[[widget]]
+id    = "inventory-badge"
+entry = "widget.luau"
+
+  [[widget.setting]]
+  key             = "glyph"
+  type            = "glyph"
+  label_key       = "settings.glyph.label"
+  description_key = "settings.glyph.description"
+  default         = "package"
+
+  [[widget.setting]]
+  key             = "show_low_stock_badge"
+  type            = "bool"
+  label_key       = "settings.show_low_stock_badge.label"
+  description_key = "settings.show_low_stock_badge.description"
+  default         = true
+
+# ---------------------------------------------------------------------------
+# Panel
+# ---------------------------------------------------------------------------
+
+[[panel]]
+id              = "inventory-panel"
+entry           = "panel.luau"
+width           = 600
+height          = 640
+placement       = "attached"
+position        = "center"
+open_near_click = true
