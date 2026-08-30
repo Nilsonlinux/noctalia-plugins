@@ -1,4 +1,6 @@
 # noctalia-plugins
 Plugins Noctalia V5
 
-https://raw.githubusercontent.com/Nilsonlinux/noctalia-plugins/cb6e042ab134bad8e024a693895db17f149780cb/noctalia.svg
+<p align="center">
+  <img src="https://assets.noctalia.dev/noctalia-logo.svg?v=2" alt="Noctalia Logo" style="width: 192px" />
+</p>
