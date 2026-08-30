@@ -31,5 +31,5 @@ author      = "Nilsonlinux"
 license     = "MIT"
 icon        = "package"
 description = "Gerencia estoque de produtos com categorias e alertas de baixa"
-tags        = ["utility", "indicator", "panel", "bar", "service"]
+tags        = ["productivity", "utility", "indicator", "panel", "bar", "service"]
 dependencies = []
