@@ -4,13 +4,64 @@
 
 local products = {}
 local dataPath = nil
+local nextId = 1
 
 local function trim(s)
     return noctalia.string.trim(s or "")
 end
 
 local function generateId()
-    return "p" .. tostring(os.time()) .. string.format("%03d", math.floor((os.clock() * 1000) % 1000))
+    -- A plain incrementing counter, seeded from the highest numeric id already
+    -- in use (see computeNextId below). This is guaranteed unique regardless
+    -- of how fast generateId() is called - the previous version combined
+    -- os.time() (1-second resolution) with os.clock() (low-resolution CPU
+    -- time), so firing many "add" commands back-to-back during an import
+    -- could produce the exact same id for two different products.
+    local id = "p" .. tostring(nextId)
+    nextId = nextId + 1
+    return id
+end
+
+local function computeNextId()
+    local maxNum = 0
+    for _, p in ipairs(products) do
+        local numStr = p.id and tostring(p.id):match("^p(%d+)$")
+        if numStr then
+            local num = tonumber(numStr)
+            if num and num > maxNum then
+                maxNum = num
+            end
+        end
+    end
+    return maxNum + 1
+end
+
+local function dedupeProductIds()
+    -- Self-heal: reassign a fresh id to any product sharing an id with an
+    -- earlier one in the list. Needed once for installs that already have
+    -- duplicate ids saved from before this fix (e.g. from a prior import).
+    local seen = {}
+    local changed = false
+    for _, p in ipairs(products) do
+        if seen[p.id] then
+            p.id = generateId()
+            changed = true
+        end
+        seen[p.id] = true
+    end
+    return changed
+end
+
+local function saveState()
+    if dataPath == nil then
+        return false
+    end
+    local ok, encoded = pcall(noctalia.json.encode, { products = products })
+    if ok and type(encoded) == "string" then
+        local writeOk = pcall(noctalia.writeFile, dataPath, encoded)
+        return writeOk and true or false
+    end
+    return false
 end
 
 local function loadState()
@@ -36,18 +87,11 @@ local function loadState()
     else
         products = {}
     end
-end
-
-local function saveState()
-    if dataPath == nil then
-        return false
+    
+    nextId = computeNextId()
+    if dedupeProductIds() then
+        saveState()
     end
-    local ok, encoded = pcall(noctalia.json.encode, { products = products })
-    if ok and type(encoded) == "string" then
-        local writeOk = pcall(noctalia.writeFile, dataPath, encoded)
-        return writeOk and true or false
-    end
-    return false
 end
 
 local function publishState()
