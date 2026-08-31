@@ -6,3 +6,9 @@ Plugins Noctalia V5
 </p>
 
 ---
+## Plugin
+
+| Plugin | Description |
+| --- | --- |
+| Link/IP Monitor | `It pings a list of IPs, hosts, or links at intervals and notifies you when one goes down (or comes back up).` |
+| RSS/Atom Notifier | Desktop widget: `Monitors RSS/Atom feeds and notifies you when new items appear.` |
