@@ -30,6 +30,6 @@ plugin_api  = 14
 author      = "Nilsonlinux"
 license     = "MIT"
 icon        = "package"
-description = "Gerencia estoque de produtos com categorias e alertas de baixa"
+description = "Manages product inventory with categories and low-stock alerts."
 tags        = ["productivity", "utility", "indicator", "panel", "bar", "service"]
 dependencies = []
