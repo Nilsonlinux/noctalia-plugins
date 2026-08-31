@@ -170,6 +170,15 @@ noctalia.state.watch("inventory.cmd", function(cmd)
         local name = trim(cmd.name or "")
         local category = trim(cmd.category or "Geral")
         local quantity = tonumber(cmd.quantity) or 0
+        -- Only import (re-adding products from a JSON snapshot) sends this;
+        -- the manual "add product" form has no damage input, so it's absent
+        -- there and safely defaults to 0. Clamped so it never exceeds quantity.
+        local damageQuantity = tonumber(cmd.damage_quantity) or 0
+        if damageQuantity < 0 then
+            damageQuantity = 0
+        elseif damageQuantity > quantity then
+            damageQuantity = quantity
+        end
         
         if name ~= "" then
             local product = {
@@ -177,7 +186,7 @@ noctalia.state.watch("inventory.cmd", function(cmd)
                 name = name,
                 category = category,
                 quantity = quantity,
-                damage_quantity = 0
+                damage_quantity = damageQuantity
             }
             
             table.insert(products, product)

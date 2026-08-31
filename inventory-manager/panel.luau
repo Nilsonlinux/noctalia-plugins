@@ -315,7 +315,8 @@ local function importStock()
                 op = "add",
                 name = product.name,
                 category = product.category or "Geral",
-                quantity = product.quantity or 0
+                quantity = product.quantity or 0,
+                damage_quantity = product.damage_quantity or 0
             })
         end
         
