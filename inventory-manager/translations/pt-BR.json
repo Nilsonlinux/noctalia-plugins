@@ -4,6 +4,7 @@
   "panel.updated": "Atualizado",
   "panel.stock_singular": "Estoque (%d produto)",
   "panel.stock_plural": "Estoque (%d produtos)",
+  "panel.tooltip_drag": "Arraste para reordenar",
   "panel.add_product": "Adicionar produto",
   "panel.edit_product": "Editar produto",
   "panel.refresh": "Atualizar",

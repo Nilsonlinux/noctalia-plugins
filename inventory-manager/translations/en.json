@@ -4,6 +4,7 @@
   "panel.updated": "Updated",
   "panel.stock_singular": "Stock (%d product)",
   "panel.stock_plural": "Stock (%d products)",
+  "panel.tooltip_drag": "Drag to reorder",  
   "panel.add_product": "Add product",
   "panel.edit_product": "Edit product",
   "panel.refresh": "Refresh",
