@@ -1,9 +1,11 @@
 # Inventory Manager
 
-Inventory Manager tracks product stock with categories, damaged-unit tracking,
-and low-stock alerts. It ships two UI surfaces — a bar widget and a panel —
-backed by one headless service that owns the product list, persists it to
-disk, and publishes live state that both surfaces read from.
+Inventory Manager tracks product stock across three independent buckets per
+product - Available, In use, and Damage - plus a computed total, with
+categories and low-stock alerts on top. It ships two UI surfaces - a bar
+widget and a panel - backed by one headless service that owns the product
+list, persists it to disk, and publishes live state that both surfaces read
+from.
 
 ## Plugin
 
@@ -35,18 +37,24 @@ noctalia msg panel-toggle nilsonlinux/inventory-manager:inventory-panel
 ### Panel
 
 The panel opens attached to the bar and centered by default. It lists every
-product as a card showing its name, a color dot (auto-detected from a color
-word in the product name, e.g. "Black", "Vermelho"), the current quantity
-capsule, and a damage badge when the product has damaged units. Hovering a
-card - including its action buttons - outlines it.
+product as a card. The name row shows the color dot (auto-detected from a
+color word in the product name, e.g. "Black", "Vermelho"), the name, an
+Available capsule (colored by stock level) with its own `-` / `+` buttons.
+Below that, a second row holds the In use and Damage buckets - each its own
+bordered card with a colored capsule and its own `-` / `+` buttons - together
+with a neutral Total capsule (the sum of all three buckets). Hovering a card
+- including its action buttons - outlines it.
 
 Category tabs above the list ("All" plus one tab per category with stock)
-filter the visible cards.
+filter the visible cards; each tab's count is the category's total across all
+three buckets.
 
 **Adding / editing a product** - the `+` header button (or "Add your first
 product" on an empty list) opens the form; the pencil icon on a card opens it
 pre-filled for editing. The form has Name, Quantity, and Category on one row,
-and Save/Cancel below:
+and Save/Cancel below. Quantity here only sets the product's **Available**
+bucket - In use and Damage start at zero for a new product and are only ever
+changed from the card itself, never overwritten by editing the form.
 
 - **Category** has two small buttons instead of a dropdown: `+` opens a plain
   text field for typing a brand-new category, and the list icon (shown only
@@ -54,24 +62,25 @@ and Save/Cancel below:
   ever used - including ones with no stock left - so you can pick one instead
   of retyping it. Picking a category closes the list automatically.
 
-**Per-card stock actions**, all with a shared hover outline across the whole
-card:
+**Stock buckets**:
 
-- `-` / `+` - decrease / increase good stock by one.
-- Warning triangle - mark one unit as damaged (moves one unit from good to
-  damaged stock without changing the total).
-- Circle-minus - repair one damaged unit at a time.
-- Rotate icon - repair *all* damaged units on the product at once. This asks
-  for inline confirmation ("Repair all damaged units?") before running.
-- Trash icon - delete the product. This also asks for inline confirmation
-  before running.
+- **Available** - free stock; shown in the colored capsule in the name row.
+- **In use** - units currently checked out / in active use.
+- **Damage** - damaged/faulty units.
+
+The three buckets are independent counters - incrementing one doesn't move
+units out of another - and the card's Total capsule is always their sum.
+
+**Deleting a product** - the trash icon on a card asks for inline
+confirmation before removing it.
 
 **Export / Import** - the header's download/upload buttons write and read a
-timestamped `estoque_YYYYMMDD_HHMMSS.json` snapshot of the whole product list.
-Both use the `export_folder` setting below (falling back to the plugin's data
-folder if it's left blank), so exported files stay where import expects them.
-Import **replaces every current product** with the file's contents, so it
-opens an inline confirmation banner first and only runs after you confirm.
+timestamped `estoque_YYYYMMDD_HHMMSS.json` snapshot of the whole product list,
+including all three buckets per product. Both use the `export_folder` setting
+below (falling back to the plugin's data folder if it's left blank), so
+exported files stay where import expects them. Import **replaces every
+current product** with the file's contents, so it opens an inline
+confirmation banner first and only runs after you confirm.
 
 ## Settings
 
@@ -79,7 +88,8 @@ opens an inline confirmation banner first and only runs after you confirm.
 
 | Setting                    | Type   | Default | Description                                                                 |
 | --------------------------- | ------ | ------- | ----------------------------------------------------------------------------- |
-| `low_stock_threshold`       | `int`  | `3`     | Quantity at or below which a product counts as low stock.                    |
+| `manual_sorting`            | `bool` | `true`  | Enable drag-and-drop to reorder lists 
+| `low_stock_threshold`       | `int`  | `3`     | Available quantity at or below which a  product counts as low stock.          |
 | `enable_low_stock_alerts`   | `bool` | `true`  | Whether low-stock notifications are shown.                                   |
 | `store_name`                | `string` | `""`  | Store name shown as a header capsule in the panel.                           |
 | `store_number`              | `string` | `""`  | Store/branch number shown as a header capsule in the panel.                  |
@@ -98,4 +108,5 @@ opens an inline confirmation banner first and only runs after you confirm.
 
 The service also accepts an `add` IPC event with a JSON payload
 (`{"name": "...", "category": "...", "quantity": 0}`) to add a product from
-outside the panel, e.g. from a shortcut or another plugin.
+outside the panel, e.g. from a shortcut or another plugin. `quantity` here
+sets the new product's Available bucket; In use and Damage start at zero.

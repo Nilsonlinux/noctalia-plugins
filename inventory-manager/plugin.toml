@@ -5,13 +5,20 @@ plugin_api  = 14
 author      = "Nilsonlinux"
 license     = "MIT"
 icon        = "package"
-description = "Manages product inventory with categories and low-stock alerts."
-tags        = ["productivity", "utility", "indicator", "panel", "bar", "service"]
+description = "Gerencia estoque de produtos com categorias, arrastar para reordenar e alertas de baixa"
+tags        = ["utility", "inventory", "products", "panel", "bar", "service"]
 dependencies = []
 
 # ---------------------------------------------------------------------------
-# Plugin settings (shared by all entries)
+# Configurações do Plugin
 # ---------------------------------------------------------------------------
+
+[[setting]]
+key             = "manual_sorting"
+type            = "bool"
+label_key       = "settings.manual_sorting.label"
+description_key = "settings.manual_sorting.description"
+default         = true
 
 [[setting]]
 key             = "low_stock_threshold"
@@ -30,7 +37,7 @@ description_key = "settings.enable_low_stock_alerts.description"
 default         = true
 
 # ---------------------------------------------------------------------------
-# Store information (plugin settings)
+# Informações da Loja
 # ---------------------------------------------------------------------------
 
 [[setting]]
@@ -69,16 +76,12 @@ description_key = "settings.export_folder.description"
 default         = ""
 
 # ---------------------------------------------------------------------------
-# Service
+# Componentes
 # ---------------------------------------------------------------------------
 
 [[service]]
 id    = "inventory-service"
 entry = "service.luau"
-
-# ---------------------------------------------------------------------------
-# Widget
-# ---------------------------------------------------------------------------
 
 [[widget]]
 id    = "inventory-badge"
@@ -98,14 +101,10 @@ entry = "widget.luau"
   description_key = "settings.show_low_stock_badge.description"
   default         = true
 
-# ---------------------------------------------------------------------------
-# Panel
-# ---------------------------------------------------------------------------
-
 [[panel]]
 id              = "inventory-panel"
 entry           = "panel.luau"
-width           = 600
+width           = 700
 height          = 640
 placement       = "attached"
 position        = "center"
