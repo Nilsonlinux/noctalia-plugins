@@ -28,20 +28,60 @@ jobs:
         with:
           python-version: '3.11'
       
+      - name: List files before generation
+        run: |
+          echo "📂 Estrutura de diretórios:"
+          ls -la
+          echo ""
+          echo "📁 Pastas de plugins:"
+          ls -d */ 2>/dev/null || echo "Nenhuma pasta encontrada"
+          echo ""
+          echo "📄 Arquivos plugin.toml:"
+          find . -name "plugin.toml" 2>/dev/null || echo "Nenhum plugin.toml encontrado"
+      
       - name: Generate catalog.toml
         run: |
           # Criar o script generate_catalog.py
           cat > generate_catalog.py << 'EOF'
-          # COLE AQUI O SCRIPT ADAPTADO ACIMA
+          # COLE AQUI O SCRIPT ADAPTADO (COM DEBUG)
           EOF
           
-          # Executar o script
+          echo "🚀 Executando script..."
           python3 generate_catalog.py
+          
+          echo ""
+          echo "📄 Conteúdo do catalog.toml gerado:"
+          cat catalog.toml || echo "❌ catalog.toml não foi criado!"
+      
+      - name: Check if catalog.toml exists
+        run: |
+          if [ -f "catalog.toml" ]; then
+            echo "✅ catalog.toml existe"
+            echo "📊 Tamanho: $(wc -c < catalog.toml) bytes"
+            echo "📝 Linhas: $(wc -l < catalog.toml) linhas"
+          else
+            echo "❌ catalog.toml NÃO foi criado!"
+            exit 1
+          fi
       
       - name: Commit and push changes
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
+          
+          echo "📊 Status do git:"
+          git status
+          
+          echo ""
+          echo "📊 Diff do catalog.toml:"
+          git diff catalog.toml || echo "Sem diferenças"
+          
           git add catalog.toml
-          git diff --staged --quiet || git commit -m "🔄 Generate catalog.toml [skip ci]"
-          git push
+          
+          if git diff --staged --quiet; then
+            echo "ℹ️ Nenhuma mudança para commitar"
+          else
+            git commit -m "🔄 Generate catalog.toml [skip ci]"
+            git push
+            echo "✅ Commit e push realizados!"
+          fi
