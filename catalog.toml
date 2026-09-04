@@ -37,8 +37,8 @@ tags = ["utility", "indicator", "panel", "bar", "service"]
 [[plugin]]
 id = "nilsonlinux/inventory-manager"
 name = "Inventory Manager"
-version = "1.0.0"
-updated_at = 1788127260
+version = "1.0.1"
+updated_at = 1788559302
 added_at = 1788127260
 author = "Nilsonlinux"
 license = "MIT"
