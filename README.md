@@ -15,3 +15,5 @@ Plugins Noctalia V5 (Unoficial)
 | Inventory Manager | `Manages product inventory with categories and low-stock alerts.` |
 
 `https://github.com/Nilsonlinux/noctalia-plugins` 
+
+![Catalog Generated](https://github.com/Nilsonlinux/noctalia-plugins/actions/workflows/on-push.yml/badge.svg)
