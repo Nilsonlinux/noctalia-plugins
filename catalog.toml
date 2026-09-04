@@ -1,37 +1,48 @@
-[[plugin]]
-id           = "nilsonlinux/link-ip-monitor"
-name         = "Link/IP Monitor"
-version      = "1.0.1"
-plugin_api   = 14
-author       = "Nilsonlinux"
-added_at     = 17082026
-updated_at   = 17082026
-license      = "MIT"
-icon         = "activity"
-description  = "It pings a list of IPs, hosts, or links at intervals and notifies you when one goes down (or comes back up)."
-tags         = ["network", "indicator", "bar", "panel", "service"]
-dependencies = ["ping"]
+# This file is auto-generated. Do not edit manually.
+# Do not include it in your commit.
+# Noctalia plugins catalog.
+# Index of every plugin this source ships: the minimum needed to render, search,
+# and compat-check the list. The per-plugin plugin.toml stays authoritative; the
+# host re-reads it on enable. Keep one [[plugin]] row per plugin subdirectory.
+# A [[plugin.release]] row names an older revision for a Noctalia below the tip's
+# plugin_api, so an older release stays installable instead of the plugin vanishing.
+# On every row, updated_at dates the commit that first shipped that row's version.
 
 [[plugin]]
-id          = "nilsonlinux/rss-notifier"
-name        = "RSS/Atom Notifier"
-version     = "1.0.3"
-plugin_api  = 14
-author      = "Nilsonlinux"
-license     = "MIT"
-icon        = "rss"
+id = "nilsonlinux/link-ip-monitor"
+name = "Link/IP Monitor"
+version = "1.0.1"
+updated_at = 1788127260
+added_at = 1788127260
+author = "Nilsonlinux"
+license = "MIT"
+icon = "activity"
+description = "It pings a list of IPs, hosts, or links at intervals and notifies you when one goes down (or comes back up)."
+plugin_api = 14
+tags = ["network", "indicator", "bar", "panel", "service"]
+
+[[plugin]]
+id = "nilsonlinux/rss-notifier"
+name = "RSS/Atom Notifier"
+version = "1.0.4"
+updated_at = 1788554610
+added_at = 1788127260
+author = "Nilsonlinux"
+license = "MIT"
+icon = "rss"
 description = "Monitors RSS/Atom feeds and notifies you when new items appear."
-tags        = ["productivity", "utility", "indicator", "panel", "bar", "service"]
-dependencies = ["xdg-open"]
+plugin_api = 14
+tags = ["utility", "indicator", "panel", "bar", "service"]
 
 [[plugin]]
-id          = "nilsonlinux/inventory-manager"
-name        = "Inventory Manager"
-version     = "1.0.0"
-plugin_api  = 14
-author      = "Nilsonlinux"
-license     = "MIT"
-icon        = "package"
-description = "Manages product inventory with categories and low-stock alerts."
-tags        = ["productivity", "utility", "indicator", "panel", "bar", "service"]
-dependencies = []
+id = "nilsonlinux/inventory-manager"
+name = "Inventory Manager"
+version = "1.0.0"
+updated_at = 1788127260
+added_at = 1788127260
+author = "Nilsonlinux"
+license = "MIT"
+icon = "package"
+description = "Inventory Manager for managing product inventory with categories, low stock alerts, and data export."
+plugin_api = 14
+tags = ["utility", "productivity", "service", "panel", "bar"]
