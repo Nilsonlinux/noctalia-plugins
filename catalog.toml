@@ -24,8 +24,8 @@ tags = ["network", "indicator", "bar", "panel", "service"]
 [[plugin]]
 id = "nilsonlinux/rss-notifier"
 name = "RSS/Atom Notifier"
-version = "1.0.4"
-updated_at = 1788554610
+version = "1.0.3"
+updated_at = 1788127260
 added_at = 1788127260
 author = "Nilsonlinux"
 license = "MIT"
