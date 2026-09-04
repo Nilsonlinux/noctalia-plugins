@@ -12,7 +12,10 @@ on:
     - cron: '0 0 * * *'
   # Permite execução manual
   workflow_dispatch:
-
+  
+permissions:
+  contents: write
+  
 jobs:
   generate:
     runs-on: ubuntu-latest
@@ -22,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Importante para ter todo o histórico git
-      
+      token: ${{ secrets.GITHUB_TOKEN }}
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
