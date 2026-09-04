@@ -1,59 +1,58 @@
-name: Generate Catalog
+name: Jobs to run on push to main
 
 on:
   push:
-    paths:
-      - '**/plugin.toml'
-      - '**/thumbnail.webp'
-  schedule:
-    - cron: '0 0 * * *'
+    branches:
+      - main
+    paths-ignore:
+      - catalog.toml
+      - '.**'
+      - README.md
+      - README_TEMPLATE.md
   workflow_dispatch:
 
-permissions:
-  contents: write
+concurrency:
+  group: on-push-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  generate:
+  update-catalog:
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write
+    if: ${{ github.repository == 'Nilsonlinux/noctalia-plugins' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
-      - name: Generate catalog.toml
+
+      - name: Rebuild catalog
+        run: python3 .github/workflows/scripts/update-catalog.py
+
+      - name: Check for changes
+        id: check_changes
         run: |
-          cat > generate_catalog.py << 'EOF'
-          # COLE O SCRIPT COMPLETO ACIMA
-          EOF
-          
-          python3 generate_catalog.py
-      
-      - name: Pull latest changes
-        run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git pull origin main --rebase || git pull origin main --no-rebase
-      
-      - name: Commit and push changes
-        run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          
           git add catalog.toml
-          
-          if git diff --staged --quiet; then
-            echo "ℹ️ Nenhuma mudança detectada, forçando commit..."
-            git commit --allow-empty -m "🔄 Force regenerate catalog.toml [skip ci]"
+          if git diff --cached --quiet catalog.toml; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes to catalog.toml"
           else
-            git commit -m "🔄 Generate catalog.toml [skip ci]"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Changes detected in catalog.toml"
           fi
-          
-          git push origin main
+
+      - name: Commit and push changes
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git commit -m "chore: update plugin catalog [skip ci]"
+          git pull --rebase
+          git push
