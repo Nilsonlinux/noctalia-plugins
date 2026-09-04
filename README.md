@@ -16,4 +16,22 @@ Plugins Noctalia V5 (Unoficial)
 
 `https://github.com/Nilsonlinux/noctalia-plugins` 
 
-![Catalog Generated](https://github.com/Nilsonlinux/noctalia-plugins/actions/workflows/on-push.yml/badge.svg)
+![Generate Catalog](https://github.com/Nilsonlinux/noctalia-plugins/actions/workflows/generate-catalog.yml/badge.svg)
+
+# Noctalia Plugins
+
+[![Atualizar Catálogo](https://github.com/Nilsonlinux/noctalia-plugins/actions/workflows/generate-catalog.yml/badge.svg)](https://github.com/Nilsonlinux/noctalia-plugins/actions/workflows/generate-catalog.yml)
+
+Repositório de plugins para Noctalia.
+
+## 📦 Plugins disponíveis
+
+| Plugin | Versão | Descrição |
+|--------|--------|-----------|
+| Link/IP Monitor | 1.0.1 | Monitora IPs e hosts |
+| RSS/Atom Notifier | 1.0.4 | Monitora feeds RSS/Atom |
+| Inventory Manager | 1.0.0 | Gerencia inventário de produtos |
+
+---
+
+> ⚡ Este repositório é automatizado. O `catalog.toml` é gerado automaticamente a partir dos `plugin.toml`.
