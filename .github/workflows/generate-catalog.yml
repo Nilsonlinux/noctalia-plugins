@@ -41,33 +41,34 @@ jobs:
       
       - name: Generate catalog.toml
         run: |
-          # Criar o script
+          # Criar o script generate_catalog.py
           cat > generate_catalog.py << 'EOF'
-          # COLE O SCRIPT MELHORADO ACIMA
+          # COLE O SCRIPT MELHORADO AQUI
           EOF
           
-          # Executar com debug
           echo "🚀 Gerando catalog.toml..."
           python3 generate_catalog.py
           
-          # Verificar resultado
-          echo ""
           if [ -f "catalog.toml" ]; then
             echo "✅ catalog.toml gerado com sucesso!"
-            echo "📊 Conteúdo:"
-            cat catalog.toml
+            echo "📊 Primeiras 20 linhas:"
+            head -20 catalog.toml
           else
             echo "❌ catalog.toml NÃO foi gerado!"
             exit 1
           fi
       
+      - name: Pull latest changes
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          echo "📥 Fazendo pull das últimas alterações..."
+          git pull origin main --rebase || git pull origin main --no-rebase
+      
       - name: Commit and push changes
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          
-          echo "📊 Status do git:"
-          git status
           
           git add catalog.toml
           
@@ -75,6 +76,7 @@ jobs:
             echo "ℹ️ Nenhuma mudança para commitar"
           else
             git commit -m "🔄 Generate catalog.toml [skip ci]"
-            git push
+            echo "📤 Fazendo push..."
+            git push origin main
             echo "✅ Commit e push realizados!"
           fi
