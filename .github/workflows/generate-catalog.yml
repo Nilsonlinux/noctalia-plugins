@@ -30,9 +30,8 @@ jobs:
       
       - name: Generate catalog.toml
         run: |
-          # Criar o script generate_catalog.py
           cat > generate_catalog.py << 'EOF'
-          # COLE O SCRIPT COMPLETO AQUI
+          # COLE O SCRIPT COMPLETO ACIMA
           EOF
           
           python3 generate_catalog.py
@@ -51,8 +50,10 @@ jobs:
           git add catalog.toml
           
           if git diff --staged --quiet; then
-            echo "ℹ️ Nenhuma mudança para commitar"
+            echo "ℹ️ Nenhuma mudança detectada, forçando commit..."
+            git commit --allow-empty -m "🔄 Force regenerate catalog.toml [skip ci]"
           else
             git commit -m "🔄 Generate catalog.toml [skip ci]"
-            git push origin main
           fi
+          
+          git push origin main
