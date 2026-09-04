@@ -16,8 +16,6 @@ Plugins Noctalia V5 (Unoficial)
 
 `https://github.com/Nilsonlinux/noctalia-plugins` 
 
-![Generate Catalog](https://github.com/Nilsonlinux/noctalia-plugins/actions/workflows/generate-catalog.yml/badge.svg)
-
 # Noctalia Plugins
 
 [![Atualizar Catálogo](https://github.com/Nilsonlinux/noctalia-plugins/actions/workflows/generate-catalog.yml/badge.svg)](https://github.com/Nilsonlinux/noctalia-plugins/actions/workflows/generate-catalog.yml)
