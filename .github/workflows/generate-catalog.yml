@@ -28,39 +28,36 @@ jobs:
         with:
           python-version: '3.11'
       
-      - name: List files before generation
+      - name: Debug - List files
         run: |
-          echo "📂 Estrutura de diretórios:"
+          echo "📂 Estrutura atual:"
           ls -la
           echo ""
-          echo "📁 Pastas de plugins:"
-          ls -d */ 2>/dev/null || echo "Nenhuma pasta encontrada"
+          echo "📁 Pastas encontradas:"
+          ls -d */ 2>/dev/null || echo "Nenhuma pasta"
           echo ""
-          echo "📄 Arquivos plugin.toml:"
-          find . -name "plugin.toml" 2>/dev/null || echo "Nenhum plugin.toml encontrado"
+          echo "📄 plugin.toml encontrados:"
+          find . -name "plugin.toml" 2>/dev/null || echo "Nenhum plugin.toml"
       
       - name: Generate catalog.toml
         run: |
-          # Criar o script generate_catalog.py
+          # Criar o script
           cat > generate_catalog.py << 'EOF'
-          # COLE AQUI O SCRIPT ADAPTADO (COM DEBUG)
+          # COLE O SCRIPT MELHORADO ACIMA
           EOF
           
-          echo "🚀 Executando script..."
+          # Executar com debug
+          echo "🚀 Gerando catalog.toml..."
           python3 generate_catalog.py
           
+          # Verificar resultado
           echo ""
-          echo "📄 Conteúdo do catalog.toml gerado:"
-          cat catalog.toml || echo "❌ catalog.toml não foi criado!"
-      
-      - name: Check if catalog.toml exists
-        run: |
           if [ -f "catalog.toml" ]; then
-            echo "✅ catalog.toml existe"
-            echo "📊 Tamanho: $(wc -c < catalog.toml) bytes"
-            echo "📝 Linhas: $(wc -l < catalog.toml) linhas"
+            echo "✅ catalog.toml gerado com sucesso!"
+            echo "📊 Conteúdo:"
+            cat catalog.toml
           else
-            echo "❌ catalog.toml NÃO foi criado!"
+            echo "❌ catalog.toml NÃO foi gerado!"
             exit 1
           fi
       
@@ -71,10 +68,6 @@ jobs:
           
           echo "📊 Status do git:"
           git status
-          
-          echo ""
-          echo "📊 Diff do catalog.toml:"
-          git diff catalog.toml || echo "Sem diferenças"
           
           git add catalog.toml
           
