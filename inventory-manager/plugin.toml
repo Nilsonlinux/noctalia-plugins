@@ -10,7 +10,7 @@ tags        = ["utility", "productivity", "service", "panel", "bar"]
 dependencies = []
 
 # ---------------------------------------------------------------------------
-# Configurações do Plugin
+# Plugin settings
 # ---------------------------------------------------------------------------
 
 [[setting]]
@@ -36,8 +36,15 @@ label_key       = "settings.enable_low_stock_alerts.label"
 description_key = "settings.enable_low_stock_alerts.description"
 default         = true
 
+[[setting]]
+key             = "show_total_quantity"
+type            = "bool"
+label_key       = "settings.show_total_quantity.label"
+description_key = "settings.show_total_quantity.description"
+default         = true
+
 # ---------------------------------------------------------------------------
-# Informações da Loja
+# Store information
 # ---------------------------------------------------------------------------
 
 [[setting]]
@@ -76,7 +83,7 @@ description_key = "settings.export_folder.description"
 default         = ""
 
 # ---------------------------------------------------------------------------
-# Componentes
+# Components
 # ---------------------------------------------------------------------------
 
 [[service]]

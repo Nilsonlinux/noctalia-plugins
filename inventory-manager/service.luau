@@ -106,7 +106,7 @@ local function checkLowStockAlerts()
             if not previousLowStockProducts[product.id] then
                 noctalia.notify(
                     noctalia.tr("panel.title"),
-                    string.format("⚠️ %s: %s (%d %s)", noctalia.tr("settings.enable_low_stock_alerts.label"), product.name, available, noctalia.tr("panel.bucket.available"):lower())
+                    string.format(noctalia.tr("panel.low_stock_notification"), product.name, available, threshold)
                 )
             end
         end
@@ -265,23 +265,39 @@ noctalia.state.watch("inventory.cmd", function(cmd)
         end
 
     elseif op == "reorder" then
+        -- The client identifies the drop target by a neighboring product's
+        -- id ("before"/"after" + anchor_id) instead of a raw position, so
+        -- this works correctly even when the panel is showing a filtered
+        -- (single-category) view: ids map onto a unique, unambiguous index
+        -- in this full unfiltered list, whereas a plain position number
+        -- would only have been valid for the filtered view it was read from.
         local id = cmd.id
-        local insertAt = tonumber(cmd.index)
+        local anchorKind = cmd.anchor_kind
+        local anchorId = cmd.anchor_id
         
-        if id and insertAt then
+        if id and anchorKind and anchorId then
             local fromIdx = nil
             for i, p in ipairs(products) do
-                if p.id == id then
-                    fromIdx = i
-                    break
-                end
+                if p.id == id then fromIdx = i break end
             end
             
             if fromIdx then
                 local item = table.remove(products, fromIdx)
-                if fromIdx < insertAt then
-                    insertAt = insertAt - 1
+                local insertAt = #products + 1
+                
+                local anchorIdx = nil
+                for i, p in ipairs(products) do
+                    if p.id == anchorId then anchorIdx = i break end
                 end
+                
+                if anchorIdx then
+                    if anchorKind == "before" then
+                        insertAt = anchorIdx
+                    elseif anchorKind == "after" then
+                        insertAt = anchorIdx + 1
+                    end
+                end
+                
                 insertAt = math.max(1, math.min(insertAt, #products + 1))
                 table.insert(products, insertAt, item)
                 saveState()

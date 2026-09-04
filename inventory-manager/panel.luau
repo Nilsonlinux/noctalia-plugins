@@ -3,7 +3,6 @@
 -- Inventory management panel with category switcher (+ and list icon)
 
 local products = {}
-local categories = {}
 local allCategories = {}
 local categoryInputMode = "existing"
 local selectedCategory = "all"
@@ -36,13 +35,6 @@ local function getCategoryList()
 
     if type(allCategories) == "table" then
         for _, cat in ipairs(allCategories) do 
-            local name = extractCatName(cat)
-            if name and name ~= "" then catSet[name] = true end 
-        end
-    end
-
-    if type(categories) == "table" then
-        for _, cat in ipairs(categories) do 
             local name = extractCatName(cat)
             if name and name ~= "" then catSet[name] = true end 
         end
@@ -262,11 +254,11 @@ local function createInfoCapsule(value, icon, color)
     })
 end
 
-local function insertionZone(index)
+local function insertionZone(key, targetSpec)
     return ui.dropZone({
-        key          = "gap-" .. index,
+        key          = "gap-" .. key,
         accepts      = { DRAG_TYPE },
-        value        = tostring(index),
+        value        = targetSpec,
         onDrop       = "onProductDropped",
         height       = 3,
         radius       = 4,
@@ -276,11 +268,21 @@ local function insertionZone(index)
 end
 
 function onProductDropped(payload, value)
-    local insertAt = tonumber(value)
-    if type(payload) ~= "string" or payload == "" or insertAt == nil then
+    -- The dropped-on target is identified by a neighboring product's id
+    -- ("before:<id>" / "after:<id>") rather than a raw position number.
+    -- Using an id means the service can find that product's true index in
+    -- the FULL (unfiltered) product list, so reordering still lands in the
+    -- right spot even while a category tab is filtering what's shown here -
+    -- a plain "insert at position N" index would only be correct for the
+    -- filtered view, not the full list the service actually reorders.
+    if type(payload) ~= "string" or payload == "" or type(value) ~= "string" then
         return
     end
-    noctalia.state.set("inventory.cmd", { op = "reorder", id = payload, index = insertAt })
+    local kind, anchorId = value:match("^(%a+):(.+)$")
+    if not kind or not anchorId or anchorId == payload then
+        return
+    end
+    noctalia.state.set("inventory.cmd", { op = "reorder", id = payload, anchor_kind = kind, anchor_id = anchorId })
 end
 
 local function resolveExportDir()
@@ -588,7 +590,7 @@ render = function()
         
         local HEADER_HEIGHT = 22
 
-        -- LINHA 1: Nome e Quantidade
+        -- Row 1: Name and Quantity
         local row1 = {}
 
         table.insert(row1, ui.column({ flexGrow = 1, gap = 4 }, {
@@ -615,7 +617,7 @@ render = function()
 
         table.insert(formContainer, ui.row({ gap = 6, align = "start" }, row1))
 
-        -- LINHA 2: Categoria
+        -- Row 2: Category
         local catList, catSet = getCategoryList()
         local hasCategories = #catList > 0
 
@@ -674,7 +676,7 @@ render = function()
                     glyph = "plus",
                     variant = "outline",
                     controlSize = "sm",
-                    tooltip = "Digitar nova categoria",
+                    tooltip = noctalia.tr("panel.form.category_tooltip_new"),
                     onClick = function()
                         categoryInputMode = "new"
                         draftCategory = ""
@@ -687,7 +689,7 @@ render = function()
                     glyph = "list",
                     variant = "outline",
                     controlSize = "sm",
-                    tooltip = "Selecionar da lista de categorias",
+                    tooltip = noctalia.tr("panel.form.category_tooltip_existing"),
                     onClick = function()
                         categoryInputMode = "existing"
                         local currentList = getCategoryList()
@@ -708,7 +710,7 @@ render = function()
             ui.row({ gap = 6, align = "center" }, categoryRowElements)
         }))
         
-        -- Botões do Formulário
+        -- Form buttons
         table.insert(formContainer, ui.row({ gap = 4, justify = "end" }, {
             ui.button({
                 text = buttonText, variant = "primary", controlSize = "sm",
@@ -754,7 +756,7 @@ render = function()
         local rows = {}
         for i, product in ipairs(filteredProducts) do
             if isManual then
-                table.insert(rows, insertionZone(i))
+                table.insert(rows, insertionZone(product.id, "before:" .. product.id))
             end
 
             local availableQty = product.available_quantity or 0
@@ -792,7 +794,7 @@ render = function()
                     height          = 20,
                     align           = "center",
                     justify         = "center",
-                    tooltip         = noctalia.tr("panel.tooltip_drag") or "Arrastar para reordenar",
+                    tooltip         = noctalia.tr("panel.tooltip_drag"),
                 }, {
                     ui.glyph({ name = "menu", size = 14, color = "on_surface_variant" }),
                 }))
@@ -806,7 +808,7 @@ render = function()
                 if dot then table.insert(row1Elements, dot) end
             end
             
-            -- Nome do produto configurado sempre em negrito (fontWeight = "bold")
+            -- Product name is always shown in bold
             table.insert(row1Elements, ui.label({ 
                 text = product.name, 
                 fontWeight = "bold", 
@@ -816,7 +818,12 @@ render = function()
             table.insert(row1Elements, createQuantityCapsule(availableQty, badgeColor, badgeTextColor))
             if inUseQty > 0 then table.insert(row1Elements, createSimpleCapsule(noctalia.tr("panel.bucket.in_use"), inUseQty, "#1976d2")) end
             if defectiveQty > 0 then table.insert(row1Elements, createSimpleCapsule(noctalia.tr("panel.bucket.defective"), defectiveQty, "#c62828")) end
-            table.insert(row1Elements, createTotalCapsule(totalQty))
+            -- Total is only useful once it actually differs from Available -
+            -- that only happens once some stock sits in In use or Damage, so
+            -- skip it otherwise even when the setting is enabled.
+            if noctalia.getConfig("show_total_quantity") ~= false and (inUseQty > 0 or defectiveQty > 0) then
+                table.insert(row1Elements, createTotalCapsule(totalQty))
+            end
             
             table.insert(mainColumnChildren, ui.row({ gap = 6, align = "center" }, row1Elements))
             
@@ -853,7 +860,7 @@ render = function()
             table.insert(mainColumnChildren, ui.row({ gap = 8, align = "center" }, row2Elements))
             table.insert(productRowChildren, ui.column({ flexGrow = 1, gap = 2 }, mainColumnChildren))
             
-            -- Fundo dos cards ajustado para "surface_variant/0.35" (mais claro/visível)
+            -- Card background uses "surface_variant/0.35" for better visibility
             table.insert(rows, ui.row({
                 key = "product-" .. product.id, gap = 8, padding = 8, radius = 6,
                 fill = isHovered and "surface_variant/0.5" or "surface_variant/0.35",
@@ -863,7 +870,8 @@ render = function()
         end
 
         if isManual and #filteredProducts > 0 then
-            table.insert(rows, insertionZone(#filteredProducts + 1))
+            local lastProduct = filteredProducts[#filteredProducts]
+            table.insert(rows, insertionZone("end-" .. lastProduct.id, "after:" .. lastProduct.id))
         end
 
         table.insert(column, ui.scroll({ gap = 4, flexGrow = 1 }, rows))
@@ -926,7 +934,6 @@ end
 
 function onOpen(_context)
     products = noctalia.state.get("inventory.products") or {}
-    categories = noctalia.state.get("inventory.categories") or {}
     allCategories = noctalia.state.get("inventory.all_categories") or {}
     hoveredProductId = nil
     editingProductId = nil
@@ -937,11 +944,6 @@ end
 
 noctalia.state.watch("inventory.products", function(value)
     products = (type(value) == "table") and value or {}
-    render()
-end)
-
-noctalia.state.watch("inventory.categories", function(value)
-    categories = (type(value) == "table") and value or {}
     render()
 end)
 
