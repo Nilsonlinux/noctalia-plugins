@@ -28,41 +28,19 @@ jobs:
         with:
           python-version: '3.11'
       
-      - name: Debug - List files
-        run: |
-          echo "📂 Estrutura atual:"
-          ls -la
-          echo ""
-          echo "📁 Pastas encontradas:"
-          ls -d */ 2>/dev/null || echo "Nenhuma pasta"
-          echo ""
-          echo "📄 plugin.toml encontrados:"
-          find . -name "plugin.toml" 2>/dev/null || echo "Nenhum plugin.toml"
-      
       - name: Generate catalog.toml
         run: |
           # Criar o script generate_catalog.py
           cat > generate_catalog.py << 'EOF'
-          # COLE O SCRIPT MELHORADO AQUI
+          # COLE O SCRIPT COMPLETO AQUI
           EOF
           
-          echo "🚀 Gerando catalog.toml..."
           python3 generate_catalog.py
-          
-          if [ -f "catalog.toml" ]; then
-            echo "✅ catalog.toml gerado com sucesso!"
-            echo "📊 Primeiras 20 linhas:"
-            head -20 catalog.toml
-          else
-            echo "❌ catalog.toml NÃO foi gerado!"
-            exit 1
-          fi
       
       - name: Pull latest changes
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          echo "📥 Fazendo pull das últimas alterações..."
           git pull origin main --rebase || git pull origin main --no-rebase
       
       - name: Commit and push changes
@@ -76,7 +54,5 @@ jobs:
             echo "ℹ️ Nenhuma mudança para commitar"
           else
             git commit -m "🔄 Generate catalog.toml [skip ci]"
-            echo "📤 Fazendo push..."
             git push origin main
-            echo "✅ Commit e push realizados!"
           fi
