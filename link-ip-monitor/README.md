@@ -1,5 +1,5 @@
-# link-ip-monitor
-link-ip-monitor pings a list of IPs, hostnames or links on an interval, tracks
+# Link/IP Monitor
+Pings a list of IPs, hostnames or links on an interval, tracks
 each host's online/offline status and response time, and notifies when one
 goes down or comes back up.
 
