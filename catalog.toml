@@ -11,8 +11,8 @@
 [[plugin]]
 id = "nilsonlinux/link-ip-monitor"
 name = "Link/IP Monitor"
-version = "1.0.1"
-updated_at = 1788127260
+version = "1.0.2"
+updated_at = 1788554504
 added_at = 1788127260
 author = "Nilsonlinux"
 license = "MIT"
