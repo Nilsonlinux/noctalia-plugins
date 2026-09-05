@@ -11,7 +11,7 @@ on:
 
 permissions:
   contents: write
-  issues: write  # ⬅️ ADICIONADO para criar issues
+  issues: write
 
 jobs:
   generate:
@@ -21,7 +21,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2  # ⬅️ Mudado para 2 para ter acesso ao commit anterior
+          fetch-depth: 2
           token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Setup Python
@@ -33,24 +33,26 @@ jobs:
         run: |
           pip install requests
       
-      - name: Generate catalog.toml
+      - name: Create update-catalog.py script
         run: |
-          cat > generate_catalog.py << 'EOF'
+          cat > update-catalog.py << 'EOF'
           # COLE AQUI O SCRIPT update-catalog.py COMPLETO
           EOF
-          
-          python3 generate_catalog.py
       
-      - name: Check for changes
+      - name: Generate catalog.toml
+        run: |
+          python3 update-catalog.py
+      
+      - name: Check if catalog.toml changed
         id: check_changes
         run: |
-          git add catalog.toml
-          if git diff --cached --quiet catalog.toml; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No changes to catalog.toml"
-          else
+          # Verificar se o catalog.toml tem mudanças em relação ao commit anterior
+          if git diff HEAD~1 HEAD -- catalog.toml | grep -q '^[+-]'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Changes detected in catalog.toml"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes to catalog.toml"
           fi
       
       - name: Commit and push changes
@@ -58,6 +60,7 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+          git add catalog.toml
           git commit -m "chore: update plugin catalog [skip ci]"
           git pull --rebase
           git push
@@ -66,7 +69,7 @@ jobs:
         if: steps.check_changes.outputs.changed == 'true'
         run: |
           cat > create_issue.py << 'EOF'
-          # COLE AQUI O SCRIPT create-release-issue.py ACIMA
+          # COLE AQUI O SCRIPT create-release-issue.py COMPLETO
           EOF
           
           python3 create_issue.py
