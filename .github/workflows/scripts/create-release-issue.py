@@ -4,25 +4,23 @@ Script para criar uma issue no GitHub quando o catalog.toml é atualizado.
 """
 
 import os
-import json
 import sys
 import tomllib
 from pathlib import Path
 from datetime import datetime
 import subprocess
+import json
 
-ROOT_DIR = Path(__file__).resolve().parents[3]
+ROOT_DIR = Path(__file__).resolve().parent
 CATALOG_PATH = ROOT_DIR / "catalog.toml"
 
 def get_github_token():
-    """Obtém o token do GitHub das variáveis de ambiente."""
     token = os.environ.get('GITHUB_TOKEN')
     if not token:
-        raise ValueError("GITHUB_TOKEN não encontrado nas variáveis de ambiente")
+        raise ValueError("GITHUB_TOKEN não encontrado")
     return token
 
 def get_plugin_list(catalog_path: Path) -> list[dict]:
-    """Lê o catalog.toml e retorna a lista de plugins."""
     try:
         with catalog_path.open("rb") as handle:
             data = tomllib.load(handle)
@@ -31,13 +29,13 @@ def get_plugin_list(catalog_path: Path) -> list[dict]:
             elif "plugin" in data:
                 return data["plugin"]
             return []
-    except FileNotFoundError:
+    except Exception as e:
+        print(f"⚠️ Erro ao ler catalog.toml: {e}")
         return []
 
 def get_previous_catalog() -> list[dict]:
     """Busca o catalog.toml do commit anterior."""
     try:
-        # Buscar o conteúdo do catalog.toml do commit anterior
         result = subprocess.run(
             ["git", "show", "HEAD~1:catalog.toml"],
             capture_output=True,
@@ -45,19 +43,19 @@ def get_previous_catalog() -> list[dict]:
             check=False
         )
         if result.returncode == 0 and result.stdout:
-            # Parsear o TOML do commit anterior
-            import tomllib
-            data = tomllib.loads(result.stdout)
-            if isinstance(data, list):
-                return data
-            elif "plugin" in data:
-                return data["plugin"]
+            try:
+                data = tomllib.loads(result.stdout)
+                if isinstance(data, list):
+                    return data
+                elif "plugin" in data:
+                    return data["plugin"]
+            except:
+                pass
         return []
     except Exception:
         return []
 
 def compare_plugins(current: list[dict], previous: list[dict]) -> dict:
-    """Compara duas listas de plugins e retorna as diferenças."""
     current_ids = {p.get('id'): p for p in current}
     previous_ids = {p.get('id'): p for p in previous}
     
@@ -65,17 +63,14 @@ def compare_plugins(current: list[dict], previous: list[dict]) -> dict:
     removed = []
     updated = []
     
-    # Plugins adicionados
     for plugin_id in current_ids:
         if plugin_id not in previous_ids:
             added.append(current_ids[plugin_id])
     
-    # Plugins removidos
     for plugin_id in previous_ids:
         if plugin_id not in current_ids:
             removed.append(previous_ids[plugin_id])
     
-    # Plugins atualizados (mesmo id, versão diferente)
     for plugin_id in current_ids:
         if plugin_id in previous_ids:
             current_plugin = current_ids[plugin_id]
@@ -96,7 +91,6 @@ def compare_plugins(current: list[dict], previous: list[dict]) -> dict:
     }
 
 def create_issue_body(diff: dict) -> str:
-    """Cria o corpo da issue com as mudanças."""
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
     lines = [
@@ -108,7 +102,6 @@ def create_issue_body(diff: dict) -> str:
         f"",
     ]
     
-    # Plugins adicionados
     if diff['added']:
         lines.append(f"### ✅ Plugins Adicionados ({len(diff['added'])})")
         lines.append(f"")
@@ -116,12 +109,12 @@ def create_issue_body(diff: dict) -> str:
             name = plugin.get('name', plugin.get('id', 'Unknown'))
             version = plugin.get('version', 'unknown')
             author = plugin.get('author', 'unknown')
+            desc = plugin.get('description', '')
             lines.append(f"- **{name}** v{version} por @{author}")
-            if plugin.get('description'):
-                lines.append(f"  > {plugin.get('description')}")
+            if desc:
+                lines.append(f"  > {desc}")
         lines.append(f"")
     
-    # Plugins removidos
     if diff['removed']:
         lines.append(f"### ❌ Plugins Removidos ({len(diff['removed'])})")
         lines.append(f"")
@@ -131,7 +124,6 @@ def create_issue_body(diff: dict) -> str:
             lines.append(f"- **{name}** v{version}")
         lines.append(f"")
     
-    # Plugins atualizados
     if diff['updated']:
         lines.append(f"### 🔄 Plugins Atualizados ({len(diff['updated'])})")
         lines.append(f"")
@@ -150,7 +142,6 @@ def create_issue_body(diff: dict) -> str:
     return "\n".join(lines)
 
 def create_github_issue(repo: str, title: str, body: str, token: str):
-    """Cria uma issue no GitHub usando a API."""
     import requests
     
     url = f"https://api.github.com/repos/{repo}/issues"
@@ -164,12 +155,15 @@ def create_github_issue(repo: str, title: str, body: str, token: str):
         "labels": ["automation", "catalog-update"]
     }
     
+    print(f"📝 Criando issue no repositório: {repo}")
+    print(f"📌 Título: {title}")
+    
     response = requests.post(url, headers=headers, json=data)
     
     if response.status_code == 201:
+        issue_data = response.json()
         print(f"✅ Issue criada com sucesso!")
-        issue_url = response.json().get('html_url')
-        print(f"🔗 {issue_url}")
+        print(f"🔗 {issue_data.get('html_url')}")
         return True
     else:
         print(f"❌ Erro ao criar issue: {response.status_code}")
@@ -177,21 +171,18 @@ def create_github_issue(repo: str, title: str, body: str, token: str):
         return False
 
 def main():
-    """Função principal."""
     print("🔍 Verificando mudanças no catalog.toml...")
     
-    # Verificar se o catalog.toml existe
     if not CATALOG_PATH.exists():
         print("❌ catalog.toml não encontrado!")
         return 1
     
-    # Carregar catalog atual
     current_plugins = get_plugin_list(CATALOG_PATH)
-    
-    # Carregar catalog anterior
     previous_plugins = get_previous_catalog()
     
-    # Comparar
+    print(f"📊 Plugins atuais: {len(current_plugins)}")
+    print(f"📊 Plugins anteriores: {len(previous_plugins)}")
+    
     diff = compare_plugins(current_plugins, previous_plugins)
     
     if not diff['has_changes']:
@@ -203,18 +194,13 @@ def main():
     print(f"  ❌ Removidos: {len(diff['removed'])}")
     print(f"  🔄 Atualizados: {len(diff['updated'])}")
     
-    # Criar issue
     token = get_github_token()
     repo = os.environ.get('GITHUB_REPOSITORY', 'Nilsonlinux/noctalia-plugins')
     
-    # Título da issue
     now = datetime.now().strftime('%Y-%m-%d')
     title = f"🔄 Catalog Update - {now}"
-    
-    # Corpo da issue
     body = create_issue_body(diff)
     
-    print(f"📝 Criando issue...")
     success = create_github_issue(repo, title, body, token)
     
     return 0 if success else 1
