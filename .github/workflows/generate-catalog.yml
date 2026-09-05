@@ -1,41 +1,46 @@
-name: Jobs to run on push to main
+name: Generate Catalog
 
 on:
   push:
-    branches:
-      - main
-    paths-ignore:
-      - catalog.toml
-      - '.**'
-      - README.md
-      - README_TEMPLATE.md
+    paths:
+      - '**/plugin.toml'
+      - '**/thumbnail.webp'
+  schedule:
+    - cron: '0 0 * * *'
   workflow_dispatch:
 
-concurrency:
-  group: on-push-${{ github.ref }}
-  cancel-in-progress: true
+permissions:
+  contents: write
+  issues: write  # ⬅️ ADICIONADO para criar issues
 
 jobs:
-  update-catalog:
+  generate:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    if: ${{ github.repository == 'Nilsonlinux/noctalia-plugins' }}
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 2  # ⬅️ Mudado para 2 para ter acesso ao commit anterior
           token: ${{ secrets.GITHUB_TOKEN }}
-
+      
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Rebuild catalog
-        run: python3 .github/workflows/scripts/update-catalog.py
-
+      
+      - name: Install dependencies
+        run: |
+          pip install requests
+      
+      - name: Generate catalog.toml
+        run: |
+          cat > generate_catalog.py << 'EOF'
+          # COLE AQUI O SCRIPT update-catalog.py COMPLETO
+          EOF
+          
+          python3 generate_catalog.py
+      
       - name: Check for changes
         id: check_changes
         run: |
@@ -47,7 +52,7 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Changes detected in catalog.toml"
           fi
-
+      
       - name: Commit and push changes
         if: steps.check_changes.outputs.changed == 'true'
         run: |
@@ -56,3 +61,15 @@ jobs:
           git commit -m "chore: update plugin catalog [skip ci]"
           git pull --rebase
           git push
+      
+      - name: Create issue about catalog changes
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          cat > create_issue.py << 'EOF'
+          # COLE AQUI O SCRIPT create-release-issue.py ACIMA
+          EOF
+          
+          python3 create_issue.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
