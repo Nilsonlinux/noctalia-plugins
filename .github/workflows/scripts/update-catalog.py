@@ -9,7 +9,7 @@ import tomllib
 from pathlib import Path
 
 
-ROOT_DIR = Path(__file__).resolve().parents[3]
+ROOT_DIR = Path(__file__).resolve().parent
 CATALOG_PATH = ROOT_DIR / "catalog.toml"
 REQUIRED_FIELDS = ("id", "name", "version", "author", "plugin_api", "tags")
 OPTIONAL_STRING_FIELDS = ("license", "icon", "description")
@@ -19,19 +19,40 @@ OLDEST_SUPPORTED_PLUGIN_API = 3
 
 
 def git_commit_time(path: Path, *extra_args: str) -> int | None:
-    stdout = subprocess.run(
-        ["git", "log", "-1", *extra_args, "--format=%ct", "--", path],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    return int(stdout) if stdout else None
+    """Retorna o timestamp do commit mais recente do arquivo."""
+    try:
+        stdout = subprocess.run(
+            ["git", "log", "-1", *extra_args, "--format=%ct", "--", str(path)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        return int(stdout) if stdout else None
+    except (subprocess.CalledProcessError, ValueError):
+        return None
+
+
+def git_last_commit_time_for_folder(folder: str) -> int | None:
+    """Retorna o timestamp do commit mais recente que afetou a pasta do plugin."""
+    try:
+        stdout = subprocess.run(
+            ["git", "log", "-1", "--format=%ct", "--", folder],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        return int(stdout) if stdout else None
+    except (subprocess.CalledProcessError, ValueError):
+        return None
 
 
 def git_output(*args: str) -> str:
-    return subprocess.run(
-        ["git", *args], capture_output=True, text=True, check=True
-    ).stdout
+    try:
+        return subprocess.run(
+            ["git", *args], capture_output=True, text=True, check=True
+        ).stdout
+    except subprocess.CalledProcessError:
+        return ""
 
 
 def plugin_history(subdir: str) -> list[tuple[str, int, dict]]:
@@ -153,7 +174,17 @@ def discover_plugins() -> list[dict]:
         released = release_times(history)
         manifest["_directory"] = directory
         manifest["_order"] = order.get(manifest["id"], len(order))
-        manifest["updated_at"] = released.get(manifest["version"], manifest["updated_at"])
+        
+        # ⬇️ CORREÇÃO: Usar a data do commit da pasta, não apenas do plugin.toml ⬇️
+        folder_commit_time = git_last_commit_time_for_folder(directory)
+        version_commit_time = released.get(manifest["version"])
+        
+        # Priorizar: 1) commit da pasta, 2) commit da versão, 3) fallback
+        if folder_commit_time:
+            manifest["updated_at"] = folder_commit_time
+        elif version_commit_time:
+            manifest["updated_at"] = version_commit_time
+        
         manifest["releases"] = release_history(history, manifest["plugin_api"], released)
         plugins.append(manifest)
 
@@ -233,6 +264,14 @@ def main() -> int:
     plugins = discover_plugins()
     CATALOG_PATH.write_text(render_catalog(plugins), encoding="utf-8")
     print(f"Updated {CATALOG_PATH.relative_to(ROOT_DIR)} with {len(plugins)} plugin(s).")
+    
+    # Mostrar as datas para debug
+    print("\n📅 Datas dos plugins:")
+    for plugin in plugins:
+        from datetime import datetime
+        updated = datetime.fromtimestamp(plugin['updated_at']).strftime('%Y-%m-%d %H:%M:%S')
+        print(f"  {plugin['name']}: {updated}")
+    
     return 0
 
 
