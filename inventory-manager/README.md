@@ -36,7 +36,7 @@ noctalia msg panel-toggle nilsonlinux/inventory-manager:inventory-panel
 
 ### Panel
 
-The panel opens attached to the bar and centered by default. It lists every
+The panel opens floating at top-center by default. It lists every
 product as a card. The name row shows the color dot (auto-detected from a
 color word in the product name, e.g. "Black", "Vermelho"), the name in bold,
 an Available capsule (colored by stock level), and - only while they hold
@@ -48,6 +48,9 @@ Settings). Hovering a card - including its action buttons - highlights it.
 Category tabs above the list ("All" plus one tab per category with stock)
 filter the visible cards; each tab's count is the category's total across all
 three buckets.
+
+The header's gear button opens this plugin's settings directly (same as
+Settings → Plugins → Inventory Manager → gear), without leaving the panel.
 
 **Adding / editing a product** - the `+` header button (or "Add your first
 product" on an empty list) opens the form; the pencil icon on a card opens it

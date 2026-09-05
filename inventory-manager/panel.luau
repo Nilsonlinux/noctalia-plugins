@@ -496,6 +496,11 @@ render = function()
         onClick = function() noctalia.state.set("inventory.cmd", { op = "refresh" }) render() end
     }))
     table.insert(headerButtons, ui.button({
+        glyph = "settings", variant = "outline", controlSize = "sm",
+        tooltip = noctalia.tr("panel.settings"), border = "outline", borderWidth = 1,
+        onClick = function() noctalia.openSettings() end
+    }))
+    table.insert(headerButtons, ui.button({
         glyph = "close", variant = "outline", controlSize = "sm",
         tooltip = noctalia.tr("panel.close"), border = "outline", borderWidth = 1,
         onClick = function() panel.close() end
