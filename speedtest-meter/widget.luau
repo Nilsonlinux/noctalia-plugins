@@ -1,33 +1,19 @@
 --!strict
 -- Speedtest Meter — bar widget entry point.
 --
--- Shows a text/glyph in the bar; clicking it toggles the speedtest panel.
--- The displayed text is configurable from the panel (idle screen -> "Widget
--- icon" field) and shared across entries via noctalia.state, so it updates
--- live without needing to reload the plugin.
-
-local DEFAULT_ICON = "SPD"
-local currentIcon = DEFAULT_ICON
-local watching = false
-
-local function applyIcon(value: string?)
-	if value and value ~= "" then
-		currentIcon = value
-	else
-		currentIcon = DEFAULT_ICON
-	end
-	barWidget.setText(currentIcon)
-end
+-- Shows a fixed label in the bar; clicking it toggles the speedtest panel.
+--
+-- No custom icon-customization logic here on purpose: overriding a bar
+-- widget's label/icon per instance is something Noctalia itself already
+-- handles for widgets in general (its own widget settings screen), not
+-- something each plugin should reimplement. If your Noctalia version
+-- exposes that natively for plugin widgets, use it there; if it doesn't yet
+-- support custom icons for third-party widgets, let me know exactly where
+-- that setting lives (or its config schema) and this can wire into it
+-- properly instead of guessing again.
 
 function update()
-	if not watching then
-		watching = true
-		applyIcon(noctalia.state.get("widgetIcon"))
-		noctalia.state.watch("widgetIcon", function(value)
-			applyIcon(value)
-		end)
-	end
-
+	barWidget.setText("SPD")
 	barWidget.setTooltip(noctalia.tr("widget_tooltip"))
 end
 

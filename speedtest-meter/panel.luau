@@ -30,8 +30,6 @@ local result: any = nil -- normalized result table (see normalizeOokla/normalize
 local clientInfo: any = nil -- decoded geolocation JSON for the local client
 local panelActive = false
 
-local widgetIconDraft = "SPD"
-
 local DATA_FILE = "/last-result.json"
 local OOKLA_CMD = "speedtest --accept-license --accept-gdpr --format=json --progress=yes"
 local LEGACY_CMD = "speedtest-cli --json --secure"
@@ -55,7 +53,7 @@ local renderSummaryCard, metricRow
 local startTest, proceedWithLegacyOrError, runOoklaBackend, runLegacyBackend, onSpeedtestLine
 local normalizeOokla, normalizeLegacy
 local saveLastResult, loadLastResult, fetchClientInfo
-local detectPackageManager, saveWidgetIcon
+local detectPackageManager
 
 -- ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -189,28 +187,14 @@ end
 -- (city/region/country/ISP org) alongside whatever the backend reported.
 fetchClientInfo = function()
 	noctalia.http({ url = "https://ipapi.co/json/" }, function(response)
-		if not panelActive then
-			return
-		end
 		if response.ok and response.status == 200 then
 			local data = noctalia.json.decode(response.body)
 			if data then
 				clientInfo = data
-				render()
+				render() -- no-op internally if the panel is closed
 			end
 		end
 	end)
-end
-
--- ── Widget icon (shared with widget.luau via noctalia.state) ──────────────
-
-saveWidgetIcon = function(value: string)
-	local trimmed = noctalia.string.trim(value)
-	if trimmed == "" then
-		return
-	end
-	noctalia.state.set("widgetIcon", trimmed)
-	noctalia.notify(noctalia.tr("app_name"), noctalia.tr("notify_icon_saved"))
 end
 
 -- ── Speedtest run ────────────────────────────────────────────────────────
@@ -240,9 +224,6 @@ startTest = function()
 	-- (unambiguous) as the fallback either way.
 	if noctalia.commandExists("speedtest") then
 		local started = noctalia.runAsync("speedtest --version", function(res)
-			if not panelActive then
-				return
-			end
 			local versionText = string.lower(res.stdout or "")
 			if not res.timedOut and string.find(versionText, "ookla", 1, true) then
 				backendInUse = "ookla"
@@ -262,10 +243,6 @@ startTest = function()
 end
 
 proceedWithLegacyOrError = function()
-	if not panelActive then
-		return
-	end
-
 	if noctalia.commandExists("speedtest-cli") then
 		backendInUse = "legacy"
 		render()
@@ -304,9 +281,6 @@ runLegacyBackend = function()
 	-- No incremental progress from this tool, so pulse the gauge instead.
 	panel.setNeedsFrameTick(true)
 	local started = noctalia.runAsync(LEGACY_CMD, function(cmdResult)
-		if not panelActive then
-			return
-		end
 		panel.setNeedsFrameTick(false)
 
 		if cmdResult.timedOut then
@@ -347,10 +321,6 @@ runLegacyBackend = function()
 end
 
 onSpeedtestLine = function(line: string)
-	if not panelActive then
-		return -- panel closed mid-test; drop late updates
-	end
-
 	local trimmed = noctalia.string.trim(line)
 	if trimmed == "" then
 		return
@@ -433,29 +403,6 @@ renderIdle = function()
 	end
 
 	table.insert(children, ui.button({ text = noctalia.tr("start_test"), onClick = startTest }))
-
-	-- Widget icon setting. Type any text or a single glyph (e.g. a Nerd Font
-	-- character) — it's passed straight to barWidget.setText in widget.luau.
-	table.insert(children, ui.separator({}))
-	table.insert(children, ui.label({ text = noctalia.tr("widget_icon_label"), fontSize = 13, bold = true }))
-	table.insert(
-		children,
-		ui.row({ spacing = 8 }, {
-			ui.input({
-				value = widgetIconDraft,
-				placeholder = "SPD",
-				onChange = function(newValue: string)
-					widgetIconDraft = newValue
-				end,
-			}),
-			ui.button({
-				text = noctalia.tr("save"),
-				onClick = function()
-					saveWidgetIcon(widgetIconDraft)
-				end,
-			}),
-		})
-	)
 
 	return ui.column({ spacing = 8, padding = 16 }, children)
 end
@@ -615,12 +562,14 @@ end
 
 function onOpen(context: any)
 	panelActive = true
-	local storedIcon = noctalia.state.get("widgetIcon")
-	if storedIcon and storedIcon ~= "" then
-		widgetIconDraft = storedIcon
-	end
 	if state == "idle" and result == nil then
 		loadLastResult()
+	end
+	if state == "running" then
+		-- Reopened while a test was still going (or had already finished
+		-- while closed, in which case state is already "done" by now and
+		-- this branch is skipped) — resume the pulse/elapsed-timer ticks.
+		panel.setNeedsFrameTick(true)
 	end
 	render()
 end

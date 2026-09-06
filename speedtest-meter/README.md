@@ -21,13 +21,26 @@ Se nenhum dos dois existir, a tela de erro detecta seu gerenciador de pacotes
 
 ## Ícone do widget
 
-Na tela inicial do painel tem um campo "Ícone do widget": digite qualquer texto ou um glyph (por
-exemplo, um caractere de Nerd Font) e clique em "Salvar". O widget da barra atualiza na hora — a
-preferência fica salva via `noctalia.state`, compartilhado entre o painel e o widget. (Tentei
-antes deixar isso como uma configuração nativa do widget via `[[config]]` no `plugin.toml`, mas
-sem o schema real de configurações do Noctalia documentado, a opção simplesmente não apareceu na
-tela de configurações — então voltei pro campo dentro do painel, que usa só API documentada e
-funciona garantido.)
+Removido do plugin de propósito. Trocar o ícone/texto de um widget na barra é algo que o próprio
+Noctalia já resolve nativamente pra widgets em geral (na tela de configurações do widget), sem
+cada plugin precisar reimplementar isso com `noctalia.state` ou `[[config]]` — as duas tentativas
+anteriores (campo no painel, depois `[[config]]` no manifesto) eram gambiarra por falta do schema
+real. Se o Noctalia não tiver isso pronto pra widgets de plugin ainda, me diga onde/como esse tipo
+de configuração deveria aparecer (schema do manifesto ou local exato na UI) que eu implemento
+certo, sem chutar de novo.
+
+## Painel travava depois de fechar durante o teste
+
+Bug real, corrigido: ao fechar o painel, o código descartava o resultado do teste em vez de só
+pausar a atualização visual — `if not panelActive then return end` no início dos callbacks de
+progresso/resultado (`onSpeedtestLine`, o callback do backend legado, `fetchClientInfo`) fazia o
+teste terminar "no vácuo" se o painel estivesse fechado naquele momento. Reabrir o painel depois
+mostrava a tela congelada pra sempre, porque aquele callback já tinha rodado e descartado tudo.
+
+Agora esses callbacks sempre processam o resultado (atualizam `result`/`state` normalmente),
+independente do painel estar aberto ou fechado — só a chamada de `panel.render()` é pulada
+enquanto fechado (isso já era seguro, é só não desenhar). Reabrir o painel mostra o estado real
+(rodando, com o cronômetro retomado, ou já concluído, se tiver terminado enquanto estava fechado).
 
 ## Velocímetro não aparecia durante o teste
 
