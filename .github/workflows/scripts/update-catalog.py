@@ -277,3 +277,26 @@ if __name__ == "__main__":
     except Exception as error:
         print(f"error: {error}", file=sys.stderr)
         raise SystemExit(1)
+
+  notify-new-plugins:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    if: ${{ github.repository == 'Nilsonlinux/noctalia-plugins' && github.event_name == 'push' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Create issue for new plugins
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.event.after }}
+        run: python3 .github/workflows/scripts/create-plugin-issues.py
