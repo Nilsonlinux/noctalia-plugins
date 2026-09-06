@@ -15,10 +15,17 @@ REQUIRED_FIELDS = ("id", "name", "version", "author", "plugin_api", "tags")
 OPTIONAL_STRING_FIELDS = ("license", "icon", "description")
 OPTIONAL_BOOL_FIELDS = ("deprecated",)
 
+# Oldest plugin API any supported Noctalia accepts (kOldestSupportedPluginApiVersion in the
+# shell's src/scripting/plugin_api.h). Release rows below it can never be installed, so the
+# history walk stops there.
 OLDEST_SUPPORTED_PLUGIN_API = 3
 
 
 def git_commit_time(path: Path, *extra_args: str) -> int | None:
+    """Commit time in Unix seconds, or None when `path` has no matching commit.
+
+    An uncommitted plugin has no history, so `git log` prints nothing.
+    """
     stdout = subprocess.run(
         ["git", "log", "-1", *extra_args, "--format=%ct", "--", path],
         capture_output=True,
@@ -35,6 +42,12 @@ def git_output(*args: str) -> str:
 
 
 def plugin_history(subdir: str) -> list[tuple[str, int, dict]]:
+    """Every readable revision of `<subdir>/plugin.toml`, newest first.
+
+    One `git show` per revision, and both the release ladder and the per-version release
+    dates come out of this single walk. (A directory rename starts the history over, the
+    same way it resets `added_at`.)
+    """
     history = []
     revisions = git_output(
         "log", "--format=%H %ct", "--", f"{subdir}/plugin.toml"
@@ -47,15 +60,21 @@ def plugin_history(subdir: str) -> list[tuple[str, int, dict]]:
                 git_output("show", f"{revision}:{subdir}/plugin.toml")
             )
         except (subprocess.CalledProcessError, tomllib.TOMLDecodeError):
-            continue
+            continue  # unreadable or pre-`plugin_api` history
         history.append((revision, int(commit_time), manifest))
 
     return history
 
 
 def release_times(history: list[tuple[str, int, dict]]) -> dict[str, int]:
+    """When each version string was first committed, keyed by version.
+
+    The earliest commit carrying a version is the bump that released it. A later commit
+    editing plugin.toml without bumping (tags, description, translations) must not move the
+    date, and a version that reappears after a revert keeps its original one.
+    """
     times: dict[str, int] = {}
-    for _, commit_time, manifest in reversed(history):
+    for _, commit_time, manifest in reversed(history):  # oldest first
         version = manifest.get("version")
         if isinstance(version, str) and version:
             times.setdefault(version, commit_time)
@@ -65,6 +84,13 @@ def release_times(history: list[tuple[str, int, dict]]) -> dict[str, int]:
 def release_history(
     history: list[tuple[str, int, dict]], tip_api: int, released: dict[str, int]
 ) -> list[dict]:
+    """Older revisions of a plugin, one per API level below the tip's, newest first.
+
+    A Noctalia below the tip's `plugin_api` has nothing to install unless the catalog names
+    a revision it can run. Walking `<subdir>/plugin.toml` newest-first and keeping only the
+    revisions that lower the API level yields a strictly decreasing sequence, so each row is
+    the newest revision at or below its own level -- exactly what the host resolves against.
+    """
     releases = []
     lowest_api = tip_api
 
@@ -81,6 +107,8 @@ def release_history(
         if plugin_api >= lowest_api or plugin_api < OLDEST_SUPPORTED_PLUGIN_API:
             continue
 
+        # `rev` is the newest revision still on this API level, not necessarily the bump
+        # commit, so the date comes from the version rather than from `rev` itself.
         releases.append(
             {
                 "plugin_api": plugin_api,
@@ -126,6 +154,12 @@ def load_plugin_manifest(path: Path) -> dict:
                 raise ValueError(f"{path.relative_to(ROOT_DIR)} has invalid {field}; expected bool")
             out[field] = manifest[field]
 
+    # Git dates a committed plugin, and is stable across checkouts. Anything git cannot date
+    # falls back to the file's mtime: an uncommitted plugin still gets a sensible entry so the
+    # catalog can be generated mid-development. (A rename also breaks the link to the commit
+    # that first added the file, which is why added_at falls back too.)
+    # `updated_at` is only the last plugin.toml touch here; discover_plugins replaces it with
+    # the date `version` was actually bumped once the file's history has been walked.
     mtime = int(path.stat().st_mtime)
     out["updated_at"] = git_commit_time(path) or mtime
     out["added_at"] = git_commit_time(path, "--diff-filter=A") or out["updated_at"]
@@ -153,6 +187,7 @@ def discover_plugins() -> list[dict]:
         released = release_times(history)
         manifest["_directory"] = directory
         manifest["_order"] = order.get(manifest["id"], len(order))
+        # A bump that is not committed yet has no commit to date it, so the last touch stands.
         manifest["updated_at"] = released.get(manifest["version"], manifest["updated_at"])
         manifest["releases"] = release_history(history, manifest["plugin_api"], released)
         plugins.append(manifest)
