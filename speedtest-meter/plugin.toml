@@ -4,16 +4,15 @@ version      = "1.0.0"
 plugin_api   = 18
 author       = "Nilsonlinux"
 license      = "MIT"
-icon         = "rss"
+icon         = "network-wireless"
 description  = "Run an internet speed test with a live speedometer, then show full technical results: ping, jitter, download/upload, server host, location, country and ISP."
 tags         = ["network", "indicator", "bar", "panel"]
 dependencies = []
 
-# NOTE: [[panel]]/[[widget]] field names (title/width/height, etc.) are still
-# a best guess — the header fields above now match your real manifest
-# format, but panel/widget table shapes weren't shown in that example.
-# Cross-check against link-ip-monitor's or inventory-manager's plugin.toml
-# if either declares a panel or widget.
+# NOTE: [[panel]] field names (title/width/height) are still a best guess —
+# [[widget]] and [[widget.setting]] below are now confirmed against your
+# working rss-notifier plugin. Cross-check [[panel]] against link-ip-monitor
+# or inventory-manager's plugin.toml if either declares one.
 
 [[panel]]
 id = "speedtest"
@@ -25,3 +24,10 @@ height = 560
 [[widget]]
 id = "speedtest-widget"
 entry = "widget.luau"
+
+  [[widget.setting]]
+  key             = "glyph"
+  type            = "glyph"
+  label_key       = "settings.glyph.label"
+  description_key = "settings.glyph.description"
+  default         = "wifi"

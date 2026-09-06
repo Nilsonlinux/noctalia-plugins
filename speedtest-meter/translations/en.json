@@ -1,5 +1,7 @@
 {
   "app_name": "Speedtest Meter",
+  "settings.glyph.label": "Icon",
+  "settings.glyph.description": "Icon shown in the bar for this widget.",
   "widget_tooltip": "Speedtest Meter — click to run a speed test",
   "idle_subtitle": "Measure download, upload, ping and see full technical details.",
   "start_test": "Start test",

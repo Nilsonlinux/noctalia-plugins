@@ -21,16 +21,11 @@ Se nenhum dos dois existir, a tela de erro detecta seu gerenciador de pacotes
 
 ## Ícone do widget
 
-Voltou a existir, agora seguindo o padrão de verdade que você mandou do `rss-notifier`:
-`noctalia.getConfig("glyph")` lido no `widget.luau`, renderizado via `ui.glyph` +
-`barWidget.render` (em vez do `setText` fixo de antes), atualizando via `onConfigChanged` quando
-o usuário troca o ícone na tela de configurações do widget.
-
-**Falta só uma peça**: a declaração desse `glyph` no `plugin.toml` — isso não aparece no
-`widget.luau` do exemplo. Já errei duas vezes chutando o schema de `[[config]]`, então dessa vez
-não vou chutar de novo: preciso do `plugin.toml` do `rss-notifier` (ou de qualquer outro plugin
-seu que já tenha uma config funcionando na tela de configurações do widget) pra copiar o formato
-certo.
+Confirmado e implementado com o schema real que você mandou: `[[widget.setting]]` aninhado dentro
+de `[[widget]]` no `plugin.toml` (`type = "glyph"`, `label_key`/`description_key` apontando pras
+traduções, `default = "wifi"`), lido em `widget.luau` via `noctalia.getConfig("glyph")` e
+renderizado com `ui.glyph` + `barWidget.render` (em vez do `setText` fixo de antes) — igual ao
+padrão do seu `rss-notifier`. Deve aparecer agora na tela de configurações do widget na barra.
 
 ## Painel travava depois de fechar durante o teste
 
