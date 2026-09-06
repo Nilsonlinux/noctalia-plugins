@@ -26,7 +26,7 @@ Repositório de plugins para Noctalia.
 
 | Plugin | Versão | Descrição |
 |--------|--------|-----------|
-| Link/IP Monitor | 1.0.1 | Monitora IPs e hosts |
+| Link/IP Monitor | 1.0.2 | Monitora IPs e hosts |
 | RSS/Atom Notifier | 1.0.4 | Monitora feeds RSS/Atom |
 | Inventory Manager | 1.0.0 | Gerencia inventário de produtos |
 
