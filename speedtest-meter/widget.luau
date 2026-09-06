@@ -32,5 +32,5 @@ function update()
 end
 
 function onClick()
-	noctalia.togglePanel("you/speedtest-meter:speedtest")
+	noctalia.togglePanel("nilsonlinux/speedtest-meter:speedtest")
 end

@@ -1,4 +1,4 @@
-# Speedtest Meter
+# Speedtest Meter — plugin Noctalia v5
 
 Widget na barra + painel com velocímetro e tela final de dados técnicos completos.
 
