@@ -1,13 +1,13 @@
-id = "nilsonlinux/speedtest-meter"
-name = "Speedtest Meter"
+id           = "nilsonlinux/speedtest-meter"
+name         = "Speedtest Meter"
 version      = "1.0.0"
-plugin_api   = 14
+plugin_api   = 18
 author       = "Nilsonlinux"
 license      = "MIT"
-icon         = " "
-description  = " "
-tags         = ["network", "indicator", "bar", "panel", "service"]
-dependencies = ["ping"]
+icon         = "network-wireless"
+description  = "Run an internet speed test with a live speedometer, then show full technical results: ping, jitter, download/upload, server host, location, country and ISP."
+tags         = ["network", "indicator", "bar", "panel"]
+dependencies = ["speedtest-cli"]
 
 [[panel]]
 id = "speedtest"
