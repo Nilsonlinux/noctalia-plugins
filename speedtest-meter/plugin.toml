@@ -1,19 +1,13 @@
-id           = "nilsonlinux/speedtest-meter"
-name         = "Speedtest Meter"
+id = "nilsonlinux/speedtest-meter"
+name = "Speedtest Meter"
 version      = "1.0.0"
-plugin_api   = 18
+plugin_api   = 14
 author       = "Nilsonlinux"
 license      = "MIT"
-icon         = "network-wireless"
-description  = "Run an internet speed test with a live speedometer, then show full technical results: ping, jitter, download/upload, server host, location, country and ISP."
-tags         = ["network", "indicator", "bar", "panel"]
-dependencies = []
-
-# NOTE: [[panel]]/[[widget]] field names (title/width/height, etc.) are still
-# a best guess — the header fields above now match your real manifest
-# format, but panel/widget table shapes weren't shown in that example.
-# Cross-check against link-ip-monitor's or inventory-manager's plugin.toml
-# if either declares a panel or widget.
+icon         = " "
+description  = " "
+tags         = ["network", "indicator", "bar", "panel", "service"]
+dependencies = ["ping"]
 
 [[panel]]
 id = "speedtest"
