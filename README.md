@@ -31,5 +31,17 @@ Repositório de plugins para Noctalia.
 | Inventory Manager | 1.0.0 | Gerencia inventário de produtos |
 
 ---
+### Thumbnail
+
+Every plugin ships a `thumbnail.webp`. It is the card image in the plugin store and on the website. Generate one with
+the **[thumbnail generator](https://assets.noctalia.dev/plugins/thumbnail-generator.html)**: drop in a screenshot of
+your plugin, set the title, category tag and accent color, then export the 960×540 WebP and commit it as
+`<plugin>/thumbnail.webp`.
+
+### README
+
+`README.md` is the plugin's public page, so it must tell a user how to access every entry instead of only describing
+the implementation. Follow [`README_TEMPLATE.md`](README_TEMPLATE.md), which mirrors the structure used by the
+official plugins:
 
 > ⚡ Este repositório é automatizado. O `catalog.toml` é gerado automaticamente a partir dos `plugin.toml`.
