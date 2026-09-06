@@ -1,5 +1,4 @@
 name: Jobs to run on push to main
-
 on:
   push:
     branches:
@@ -10,11 +9,9 @@ on:
       - README.md
       - README_TEMPLATE.md
   workflow_dispatch:
-
 concurrency:
   group: on-push-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   update-catalog:
     runs-on: ubuntu-latest
@@ -27,15 +24,12 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Rebuild catalog
         run: python3 .github/workflows/scripts/update-catalog.py
-
       - name: Check for changes
         id: check_changes
         run: |
@@ -47,7 +41,6 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Changes detected in catalog.toml"
           fi
-
       - name: Commit and push changes
         if: steps.check_changes.outputs.changed == 'true'
         run: |
@@ -56,11 +49,6 @@ jobs:
           git commit -m "chore: update plugin catalog [skip ci]"
           git pull --rebase
           git push
-
-          jobs:
-  update-catalog:
-    runs-on: ubuntu-latest
-    ...
 
   notify-new-plugins:
     runs-on: ubuntu-latest
