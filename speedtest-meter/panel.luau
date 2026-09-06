@@ -80,6 +80,13 @@ local function formatMetric(value: number?, fmt: string): string
 	return string.format(fmt, value)
 end
 
+-- Guaranteed-to-render gauge fallback: plain text made of block characters.
+-- Doesn't depend on any unconfirmed ui.progress prop.
+local function textBar(value: number, width: number): string
+	local filled = math.floor(math.max(0, math.min(1, value)) * width + 0.5)
+	return string.rep("\u{2588}", filled) .. string.rep("\u{2591}", width - filled)
+end
+
 metricRow = function(labelKey: string, value: string)
 	return ui.row({ spacing = 8 }, {
 		ui.label({ text = noctalia.tr(labelKey) .. ":", opacity = 0.7, width = 150 }),
@@ -484,14 +491,22 @@ renderRunning = function()
 		ui.label({ text = noctalia.tr("app_name"), fontSize = 18, bold = true }),
 		ui.label({ text = noctalia.tr(phaseKey), opacity = 0.75 }),
 		ui.spacer({ size = 8 }),
-		-- Speedometer gauge. NOTE: `orientation`/`thickness` are a best
-		-- guess at ui.progress's prop schema — the supplied API doc doesn't
-		-- list per-component props. Check ui.progress's actual props in
-		-- your Noctalia version and adjust if needed.
-		ui.progress({
-			value = progressValue,
-			orientation = "circular",
-			thickness = 10,
+		-- Speedometer gauge. NOTE: this uses only the one prop that's
+		-- certain to exist (`value`, 0..1) — a previous attempt at
+		-- `orientation`/`thickness` rendered nothing, so those aren't part
+		-- of ui.progress's real schema (or need different names/values).
+		-- Check ui.progress's actual props in your Noctalia version if you
+		-- want a fancier circular gauge.
+		ui.progress({ value = progressValue }),
+		ui.spacer({ size = 4 }),
+		ui.label({ text = textBar(progressValue, 24), fontSize = 16, opacity = 0.85 }),
+		ui.spacer({ size = 4 }),
+		-- Elapsed-time readout as a backup "it's alive" signal, independent
+		-- of whether ui.progress renders visibly on your setup.
+		ui.label({
+			text = string.format("%02d:%02d", math.floor(runningElapsed / 60), math.floor(runningElapsed) % 60),
+			fontSize = 13,
+			opacity = 0.6,
 		}),
 	}
 

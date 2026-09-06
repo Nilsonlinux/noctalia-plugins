@@ -29,6 +29,20 @@ sem o schema real de configurações do Noctalia documentado, a opção simplesm
 tela de configurações — então voltei pro campo dentro do painel, que usa só API documentada e
 funciona garantido.)
 
+## Velocímetro não aparecia durante o teste
+
+`ui.progress({ value, orientation = "circular", thickness = 10 })` não desenhava nada — os props
+`orientation`/`thickness` eram chute e claramente não existem (ou têm outro nome/valor) no seu
+Noctalia. Troquei por três camadas de feedback visual durante o teste:
+
+1. `ui.progress({ value = ... })` — só o prop que com certeza existe (0..1). Se seu `ui.progress`
+   aceitar outros props pra deixá-lo mais bonito (cor, espessura, formato circular), me diga quais
+   são que eu ajusto.
+2. Uma barra de texto (`████░░░░`) — não depende de nenhum prop desconhecido, é só `ui.label`,
+   então funciona garantido.
+3. Um cronômetro (mm:ss) do tempo decorrido — outra confirmação de que está rodando, mesmo se as
+   duas barras acima não aparecerem por algum motivo.
+
 ## Detecção de backend corrigida — causa raiz confirmada
 
 No Arch, o pacote oficial `speedtest-cli` instala **dois** binários: `speedtest-cli` e também
