@@ -21,13 +21,16 @@ Se nenhum dos dois existir, a tela de erro detecta seu gerenciador de pacotes
 
 ## Ícone do widget
 
-Removido do plugin de propósito. Trocar o ícone/texto de um widget na barra é algo que o próprio
-Noctalia já resolve nativamente pra widgets em geral (na tela de configurações do widget), sem
-cada plugin precisar reimplementar isso com `noctalia.state` ou `[[config]]` — as duas tentativas
-anteriores (campo no painel, depois `[[config]]` no manifesto) eram gambiarra por falta do schema
-real. Se o Noctalia não tiver isso pronto pra widgets de plugin ainda, me diga onde/como esse tipo
-de configuração deveria aparecer (schema do manifesto ou local exato na UI) que eu implemento
-certo, sem chutar de novo.
+Voltou a existir, agora seguindo o padrão de verdade que você mandou do `rss-notifier`:
+`noctalia.getConfig("glyph")` lido no `widget.luau`, renderizado via `ui.glyph` +
+`barWidget.render` (em vez do `setText` fixo de antes), atualizando via `onConfigChanged` quando
+o usuário troca o ícone na tela de configurações do widget.
+
+**Falta só uma peça**: a declaração desse `glyph` no `plugin.toml` — isso não aparece no
+`widget.luau` do exemplo. Já errei duas vezes chutando o schema de `[[config]]`, então dessa vez
+não vou chutar de novo: preciso do `plugin.toml` do `rss-notifier` (ou de qualquer outro plugin
+seu que já tenha uma config funcionando na tela de configurações do widget) pra copiar o formato
+certo.
 
 ## Painel travava depois de fechar durante o teste
 

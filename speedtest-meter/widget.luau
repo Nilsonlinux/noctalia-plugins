@@ -1,20 +1,35 @@
 --!strict
 -- Speedtest Meter — bar widget entry point.
 --
--- Shows a fixed label in the bar; clicking it toggles the speedtest panel.
---
--- No custom icon-customization logic here on purpose: overriding a bar
--- widget's label/icon per instance is something Noctalia itself already
--- handles for widgets in general (its own widget settings screen), not
--- something each plugin should reimplement. If your Noctalia version
--- exposes that natively for plugin widgets, use it there; if it doesn't yet
--- support custom icons for third-party widgets, let me know exactly where
--- that setting lives (or its config schema) and this can wire into it
--- properly instead of guessing again.
+-- Mirrors the pattern from nilsonlinux/rss-notifier's widget.luau: the icon
+-- is a plugin setting (noctalia.getConfig("glyph")) rendered via
+-- ui.glyph + barWidget.render, refreshed on onConfigChanged when the user
+-- picks a different icon in the widget's settings screen.
+
+local function tr(key: string): string
+	return noctalia.tr(key)
+end
+
+local DEFAULT_GLYPH = "wifi" -- fallback if no icon is configured yet; any valid glyph name works
+
+local function render()
+	local glyphName = noctalia.getConfig("glyph")
+	if not glyphName or glyphName == "" then
+		glyphName = DEFAULT_GLYPH
+	end
+
+	barWidget.render(ui.glyph({ name = glyphName, size = 14 }))
+	barWidget.setTooltip(tr("widget_tooltip"))
+end
+
+render()
 
 function update()
-	barWidget.setText("SPD")
-	barWidget.setTooltip(noctalia.tr("widget_tooltip"))
+	noctalia.setUpdateInterval(5000) -- nothing dynamic to poll; just keeps the widget alive
+end
+
+function onConfigChanged()
+	render() -- picks up the new glyph when the user changes it in the widget settings
 end
 
 function onClick()
