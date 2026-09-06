@@ -86,9 +86,61 @@ local function textBar(value: number, width: number): string
 end
 
 metricRow = function(labelKey: string, value: string)
-	return ui.row({ spacing = 8 }, {
-		ui.label({ text = noctalia.tr(labelKey) .. ":", opacity = 0.7, width = 150 }),
-		ui.label({ text = value, bold = true }),
+	return ui.row({
+		spacing = 8,
+		align = "center",
+		fill = "surface",
+		radius = 10,
+		paddingH = 10,
+		paddingV = 6,
+	}, {
+		ui.label({ text = noctalia.tr(labelKey) .. ":", opacity = 0.7, width = 140, fontSize = 13 }),
+		ui.label({ text = value, bold = true, fontSize = 14 }),
+	})
+end
+
+local function sectionHeader(labelKey: string)
+	return ui.label({ text = noctalia.tr(labelKey), fontSize = 15, bold = true })
+end
+
+-- Download/upload headline: a colored circle (width = height, radius large
+-- enough to round it into a full circle) with the number inside, an arrow
+-- + label below. Uses only the ↓/↑ characters (plain text, guaranteed to
+-- render) instead of a ui.glyph icon name, since none of the icon names
+-- tried so far matched Noctalia's actual bundled icon set. Colors are
+-- explicit hex (not semantic role names like "success"/"warning") since
+-- those didn't visibly differ in your last screenshot — hex is guaranteed
+-- to render distinctly regardless of what your theme's roles are named.
+local function heroCircle(labelKey: string, arrow: string, valueText: string, fillColor: string)
+	return ui.column({ spacing = 6, align = "center" }, {
+		ui.column({
+			width = 100,
+			height = 100,
+			radius = 999,
+			fill = fillColor,
+			align = "center",
+			justify = "center",
+			spacing = 2,
+		}, {
+			ui.label({ text = valueText, fontSize = 17, bold = true, color = "#ffffff" }),
+			ui.label({ text = "Mbps", fontSize = 10, bold = true, color = "#ffffff", opacity = 0.9 }),
+		}),
+		ui.label({ text = arrow .. " " .. noctalia.tr(labelKey), fontSize = 12, bold = true, opacity = 0.85 }),
+	})
+end
+
+-- Smaller stat used for ping/jitter/packet loss.
+local function smallStat(labelKey: string, valueText: string)
+	return ui.column({
+		spacing = 2,
+		align = "center",
+		fill = "surface",
+		radius = 12,
+		paddingH = 12,
+		paddingV = 8,
+	}, {
+		ui.label({ text = noctalia.tr(labelKey), fontSize = 11, opacity = 0.7 }),
+		ui.label({ text = valueText, fontSize = 16, bold = true }),
 	})
 end
 
@@ -484,25 +536,37 @@ renderDone = function()
 	local r = result or {}
 
 	local children = {
-		ui.label({ text = noctalia.tr("result_title"), fontSize = 18, bold = true }),
-		ui.spacer({ size = 6 }),
+		ui.label({ text = noctalia.tr("result_title"), fontSize = 20, bold = true }),
+		ui.spacer({ size = 10 }),
 
-		metricRow("metric_download", string.format("%.1f Mbps", r.downloadMbps or 0)),
-		metricRow("metric_upload", string.format("%.1f Mbps", r.uploadMbps or 0)),
-		metricRow("metric_ping", formatMetric(r.pingMs, "%.1f ms")),
-		metricRow("metric_jitter", formatMetric(r.jitterMs, "%.1f ms")),
-		metricRow("metric_packet_loss", formatMetric(r.packetLoss, "%.1f%%")),
+		-- Headline numbers: download/upload as colored circles.
+		ui.row({ spacing = 20, align = "center" }, {
+			heroCircle("metric_download", "\u{2193}", string.format("%.1f", r.downloadMbps or 0), "#22c55e"),
+			heroCircle("metric_upload", "\u{2191}", string.format("%.1f", r.uploadMbps or 0), "#f97316"),
+		}),
+		ui.spacer({ size = 14 }),
 
+		-- Secondary numbers: ping/jitter/packet loss, side by side.
+		ui.row({ spacing = 18, align = "center" }, {
+			smallStat("metric_ping", formatMetric(r.pingMs, "%.1f ms")),
+			smallStat("metric_jitter", formatMetric(r.jitterMs, "%.1f ms")),
+			smallStat("metric_packet_loss", formatMetric(r.packetLoss, "%.1f%%")),
+		}),
+
+		ui.spacer({ size = 14 }),
 		ui.separator({}),
-		ui.label({ text = noctalia.tr("section_server"), fontSize = 14, bold = true }),
+		ui.spacer({ size = 6 }),
+		sectionHeader("section_server"),
 		metricRow("metric_name", tostring(r.serverName or "-")),
 		metricRow("metric_host", tostring(r.serverHost or "-")),
 		metricRow("metric_location", tostring(r.serverLocation or "-")),
 		metricRow("metric_country", tostring(r.serverCountry or "-")),
 		metricRow("metric_server_ip", tostring(r.serverIp or "-")),
 
+		ui.spacer({ size = 6 }),
 		ui.separator({}),
-		ui.label({ text = noctalia.tr("section_connection"), fontSize = 14, bold = true }),
+		ui.spacer({ size = 6 }),
+		sectionHeader("section_connection"),
 		metricRow("metric_isp", tostring(r.isp or "-")),
 		metricRow("metric_external_ip", tostring(r.externalIp or "-")),
 	}
@@ -514,7 +578,7 @@ renderDone = function()
 		table.insert(children, metricRow("metric_org", tostring(clientInfo.org or "-")))
 	end
 
-	table.insert(children, ui.spacer({ size = 10 }))
+	table.insert(children, ui.spacer({ size = 12 }))
 
 	local buttons = { ui.button({ text = noctalia.tr("test_again"), onClick = startTest }) }
 	if r.resultUrl then
