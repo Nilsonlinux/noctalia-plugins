@@ -567,7 +567,7 @@ renderRunning = function()
 		ui.column({
 			width = 238,
 			height = 238,
-			radius = 20,
+			radius = 120,
 			fill = soft,
 			borderWidth = 0,
 			align = "center",
