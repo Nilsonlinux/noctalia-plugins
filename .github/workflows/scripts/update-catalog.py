@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from datetime import datetime, timezone
 
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
@@ -26,19 +27,27 @@ def git_commit_time(path: Path, *extra_args: str) -> int | None:
 
     An uncommitted plugin has no history, so `git log` prints nothing.
     """
-    stdout = subprocess.run(
-        ["git", "log", "-1", *extra_args, "--format=%ct", "--", path],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    return int(stdout) if stdout else None
+    try:
+        stdout = subprocess.run(
+            ["git", "log", "-1", *extra_args, "--format=%ct", "--", str(path)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        return int(stdout) if stdout else None
+    except (subprocess.CalledProcessError, ValueError):
+        return None
 
 
 def git_output(*args: str) -> str:
     return subprocess.run(
         ["git", *args], capture_output=True, text=True, check=True
     ).stdout
+
+
+def get_current_timestamp() -> int:
+    """Get current Unix timestamp"""
+    return int(datetime.now(timezone.utc).timestamp())
 
 
 def plugin_history(subdir: str) -> list[tuple[str, int, dict]]:
@@ -49,9 +58,12 @@ def plugin_history(subdir: str) -> list[tuple[str, int, dict]]:
     same way it resets `added_at`.)
     """
     history = []
-    revisions = git_output(
-        "log", "--format=%H %ct", "--", f"{subdir}/plugin.toml"
-    ).splitlines()
+    try:
+        revisions = git_output(
+            "log", "--format=%H %ct", "--", f"{subdir}/plugin.toml"
+        ).splitlines()
+    except subprocess.CalledProcessError:
+        return history
 
     for line in revisions:
         revision, _, commit_time = line.partition(" ")
@@ -77,6 +89,8 @@ def release_times(history: list[tuple[str, int, dict]]) -> dict[str, int]:
     for _, commit_time, manifest in reversed(history):  # oldest first
         version = manifest.get("version")
         if isinstance(version, str) and version:
+            if version not in times:
+                print(f"DEBUG: Found version {version} with timestamp {commit_time}")
             times.setdefault(version, commit_time)
     return times
 
@@ -109,12 +123,13 @@ def release_history(
 
         # `rev` is the newest revision still on this API level, not necessarily the bump
         # commit, so the date comes from the version rather than from `rev` itself.
+        release_time = released.get(version, get_current_timestamp())
         releases.append(
             {
                 "plugin_api": plugin_api,
                 "version": version,
                 "rev": revision,
-                "updated_at": released[version],
+                "updated_at": release_time,
             }
         )
         lowest_api = plugin_api
@@ -154,15 +169,19 @@ def load_plugin_manifest(path: Path) -> dict:
                 raise ValueError(f"{path.relative_to(ROOT_DIR)} has invalid {field}; expected bool")
             out[field] = manifest[field]
 
-    # Git dates a committed plugin, and is stable across checkouts. Anything git cannot date
-    # falls back to the file's mtime: an uncommitted plugin still gets a sensible entry so the
-    # catalog can be generated mid-development. (A rename also breaks the link to the commit
-    # that first added the file, which is why added_at falls back too.)
-    # `updated_at` is only the last plugin.toml touch here; discover_plugins replaces it with
-    # the date `version` was actually bumped once the file's history has been walked.
+    # Get commit time or fallback to file mtime
     mtime = int(path.stat().st_mtime)
-    out["updated_at"] = git_commit_time(path) or mtime
+    commit_time = git_commit_time(path)
+    
+    # If no commit time found, use mtime
+    if commit_time is None:
+        print(f"WARNING: No commit found for {path.relative_to(ROOT_DIR)}, using mtime")
+        commit_time = mtime
+    
+    out["updated_at"] = commit_time
     out["added_at"] = git_commit_time(path, "--diff-filter=A") or out["updated_at"]
+    
+    print(f"DEBUG: {path.relative_to(ROOT_DIR)} - commit_time: {commit_time}, mtime: {mtime}")
 
     return out
 
@@ -181,16 +200,30 @@ def discover_plugins() -> list[dict]:
     plugins = []
 
     for manifest_path in sorted(ROOT_DIR.glob("*/plugin.toml")):
-        manifest = load_plugin_manifest(manifest_path)
-        directory = manifest_path.parent.name
-        history = plugin_history(directory)
-        released = release_times(history)
-        manifest["_directory"] = directory
-        manifest["_order"] = order.get(manifest["id"], len(order))
-        # A bump that is not committed yet has no commit to date it, so the last touch stands.
-        manifest["updated_at"] = released.get(manifest["version"], manifest["updated_at"])
-        manifest["releases"] = release_history(history, manifest["plugin_api"], released)
-        plugins.append(manifest)
+        try:
+            manifest = load_plugin_manifest(manifest_path)
+            directory = manifest_path.parent.name
+            history = plugin_history(directory)
+            released = release_times(history)
+            manifest["_directory"] = directory
+            manifest["_order"] = order.get(manifest["id"], len(order))
+            
+            # Update timestamp with release time if available, otherwise keep what we have
+            if manifest["version"] in released:
+                manifest["updated_at"] = released[manifest["version"]]
+                print(f"DEBUG: Updated timestamp for {manifest['version']} to {manifest['updated_at']}")
+            else:
+                print(f"WARNING: Version {manifest['version']} not found in release history for {directory}")
+                # Use current time if version is not in history (new version)
+                if not history:
+                    manifest["updated_at"] = get_current_timestamp()
+                    print(f"DEBUG: Using current timestamp for new version {manifest['version']}")
+            
+            manifest["releases"] = release_history(history, manifest["plugin_api"], released)
+            plugins.append(manifest)
+        except Exception as e:
+            print(f"ERROR processing {manifest_path}: {e}", file=sys.stderr)
+            continue
 
     plugins.sort(key=lambda plugin: (plugin["_order"], plugin["_directory"]))
     return plugins
@@ -265,10 +298,19 @@ def render_catalog(plugins: list[dict]) -> str:
 
 
 def main() -> int:
-    plugins = discover_plugins()
-    CATALOG_PATH.write_text(render_catalog(plugins), encoding="utf-8")
-    print(f"Updated {CATALOG_PATH.relative_to(ROOT_DIR)} with {len(plugins)} plugin(s).")
-    return 0
+    try:
+        plugins = discover_plugins()
+        CATALOG_PATH.write_text(render_catalog(plugins), encoding="utf-8")
+        print(f"Updated {CATALOG_PATH.relative_to(ROOT_DIR)} with {len(plugins)} plugin(s).")
+        
+        # Print summary of plugin versions
+        for plugin in plugins:
+            print(f"  - {plugin['id']}: v{plugin['version']} (updated_at: {plugin['updated_at']})")
+        
+        return 0
+    except Exception as e:
+        print(f"FATAL ERROR: {e}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
