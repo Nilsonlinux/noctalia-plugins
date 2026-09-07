@@ -56,8 +56,8 @@ rev = "e57c7091bca5a227c86bfd79335d4bc044d96489"
 [[plugin]]
 id = "nilsonlinux/speedtest-meter"
 name = "Speedtest Meter"
-version = "1.3.1"
-updated_at = 1788744393
+version = "1.3.2"
+updated_at = 1788795076
 added_at = 1788730733
 author = "Nilsonlinux"
 license = "MIT"
