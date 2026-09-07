@@ -13,6 +13,7 @@ Plugins Noctalia V5 (Unofficial)
 | Link/IP Monitor | `It pings a list of IPs, hosts, or links at intervals and notifies you when one goes down (or comes back up).` |
 | RSS/Atom Notifier | `Monitors RSS/Atom feeds and notifies you when new items appear.` |
 | Inventory Manager | `Manages product inventory with categories and low-stock alerts.` |
+| Speedtest Meter | `Run an internet speed test with a live speedometer, then show full technical results: ping, jitter` |
 
 `https://github.com/Nilsonlinux/noctalia-plugins` 
 
@@ -21,14 +22,6 @@ Plugins Noctalia V5 (Unofficial)
 [![Atualizar Catálogo](https://github.com/Nilsonlinux/noctalia-plugins/actions/workflows/generate-catalog.yml/badge.svg)](https://github.com/Nilsonlinux/noctalia-plugins/actions/workflows/generate-catalog.yml)
 
 Repositório de plugins para Noctalia.
-
-## 📦 Plugins disponíveis
-
-| Plugin | Versão | Descrição |
-|--------|--------|-----------|
-| Link/IP Monitor | 1.0.2 | Monitora IPs e hosts |
-| RSS/Atom Notifier | 1.0.4 | Monitora feeds RSS/Atom |
-| Inventory Manager | 1.0.0 | Gerencia inventário de produtos |
 
 ---
 ### Thumbnail
