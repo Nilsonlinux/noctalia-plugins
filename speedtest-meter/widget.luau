@@ -18,7 +18,7 @@ local function render()
 		glyphName = DEFAULT_GLYPH
 	end
 
-	barWidget.render(ui.glyph({ name = glyphName, size = 16 }))
+	barWidget.render(ui.glyph({ name = glyphName, size = 18 }))
 	barWidget.setTooltip(tr("widget_tooltip"))
 end
 
