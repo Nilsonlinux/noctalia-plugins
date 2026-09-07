@@ -93,23 +93,23 @@ metricRow = function(labelKey: string, value: string, glyphName: string?)
 	return ui.row({
 		gap = 10,
 		align = "center",
-		fill = "#eef3fb",
+		fill = "surface_variant",
 		radius = 10,
 		paddingH = 10,
 		paddingV = 8,
 	}, {
-		ui.glyph({ name = glyphName or "circle", size = 17, color = "#4f6b95" }),
+		ui.glyph({ name = glyphName or "circle", size = 17, color = "on_surface_variant" }),
 		ui.column({ gap = 2, flexGrow = 1, align = "start" }, {
-			ui.label({ text = noctalia.tr(labelKey), fontSize = 11, color = "#60708a" }),
-			ui.label({ text = value, fontSize = 13, fontWeight = "bold", color = "#172033", maxLines = 2, maxWidth = 320 }),
+			ui.label({ text = noctalia.tr(labelKey), fontSize = 11, color = "on_surface_variant" }),
+			ui.label({ text = value, fontSize = 13, fontWeight = "bold", color = "on_surface", maxLines = 2, maxWidth = 320 }),
 		}),
 	})
 end
 
 local function sectionHeader(labelKey: string, glyphName: string)
 	return ui.row({ gap = 8, align = "center", paddingV = 2 }, {
-		ui.glyph({ name = glyphName, size = 17, color = "#4f7cff" }),
-		ui.label({ text = noctalia.tr(labelKey), fontSize = 13, fontWeight = "bold", color = "#33415c" }),
+		ui.glyph({ name = glyphName, size = 17, color = "primary" }),
+		ui.label({ text = noctalia.tr(labelKey), fontSize = 13, fontWeight = "bold", color = "on_surface" }),
 	})
 end
 
@@ -127,8 +127,8 @@ local function heroCircle(labelKey: string, arrowGlyph: string, valueText: strin
 			gap = 1,
 		}, {
 			ui.glyph({ name = arrowGlyph, size = 25, color = accent }),
-			ui.label({ text = valueText, fontSize = 29, fontWeight = "heavy", color = "#182238" }),
-			ui.label({ text = "Mbps", fontSize = 11, fontWeight = "bold", color = "#62708a" }),
+			ui.label({ text = valueText, fontSize = 29, fontWeight = "heavy", color = "on_surface" }),
+			ui.label({ text = "Mbps", fontSize = 11, fontWeight = "bold", color = "on_surface_variant" }),
 		}),
 		ui.row({
 			gap = 5,
@@ -139,7 +139,7 @@ local function heroCircle(labelKey: string, arrowGlyph: string, valueText: strin
 			paddingV = 5,
 		}, {
 			ui.glyph({ name = arrowGlyph, size = 14, color = accent }),
-			ui.label({ text = noctalia.tr(labelKey), fontSize = 12, fontWeight = "bold", color = "#34415a" }),
+			ui.label({ text = noctalia.tr(labelKey), fontSize = 12, fontWeight = "bold", color = "on_surface" }),
 		}),
 	})
 end
@@ -149,26 +149,26 @@ local function smallStat(labelKey: string, valueText: string, glyphName: string,
 		gap = 5,
 		align = "center",
 		flexGrow = 1,
-		fill = "#eef3fb",
+		fill = "surface_variant",
 		radius = 12,
 		paddingH = 8,
 		paddingV = 10,
-		border = "#d7e0ef",
+		border = "outline",
 		borderWidth = 1,
 	}, {
 		ui.glyph({ name = glyphName, size = 19, color = accent }),
-		ui.label({ text = noctalia.tr(labelKey), fontSize = 10, color = "#64718a", textAlign = "center" }),
-		ui.label({ text = valueText, fontSize = 15, fontWeight = "bold", color = "#1c2740", textAlign = "center" }),
+		ui.label({ text = noctalia.tr(labelKey), fontSize = 10, color = "on_surface_variant", textAlign = "center" }),
+		ui.label({ text = valueText, fontSize = 15, fontWeight = "bold", color = "on_surface", textAlign = "center" }),
 	})
 end
 
 local function titleBlock()
 	return ui.column({ gap = 3, align = "center", paddingV = 4 }, {
 		ui.row({ gap = 8, align = "center" }, {
-			ui.glyph({ name = "speedometer", size = 21, color = "#4f7cff" }),
-			ui.label({ text = noctalia.tr("result_title"), fontSize = 20, fontWeight = "heavy", color = "#172033" }),
+			ui.glyph({ name = "speedometer", size = 21, color = "primary" }),
+			ui.label({ text = noctalia.tr("result_title"), fontSize = 20, fontWeight = "heavy", color = "on_surface" }),
 		}),
-		ui.label({ text = "Sua conexão foi testada com sucesso", fontSize = 11, color = "#6b7890" }),
+		ui.label({ text = "Sua conexão foi testada com sucesso", fontSize = 11, color = "on_surface_variant" }),
 	})
 end
 
@@ -460,12 +460,12 @@ render = function()
 end
 
 renderSummaryCard = function(r: any)
-	return ui.column({ gap = 5, fill = "#eef3fb", radius = 12, padding = 12, border = "#d7e0ef", borderWidth = 1 }, {
-		ui.label({ text = noctalia.tr("last_result"), fontSize = 11, color = "#68758d" }),
+	return ui.column({ gap = 5, fill = "surface_variant", radius = 12, padding = 12, border = "outline", borderWidth = 1 }, {
+		ui.label({ text = noctalia.tr("last_result"), fontSize = 11, color = "on_surface_variant" }),
 		ui.row({ gap = 8, align = "center", justify = "space_between" }, {
-			ui.label({ text = string.format("↓ %.1f Mbps", r.downloadMbps or 0), fontSize = 13, fontWeight = "bold", color = "#16a765" }),
-			ui.label({ text = string.format("↑ %.1f Mbps", r.uploadMbps or 0), fontSize = 13, fontWeight = "bold", color = "#e77b18" }),
-			ui.label({ text = formatMetric(r.pingMs, "%.0f ms"), fontSize = 12, color = "#59677f" }),
+			ui.label({ text = string.format("↓ %.1f Mbps", r.downloadMbps or 0), fontSize = 13, fontWeight = "bold", color = "primary" }),
+			ui.label({ text = string.format("↑ %.1f Mbps", r.uploadMbps or 0), fontSize = 13, fontWeight = "bold", color = "secondary" }),
+			ui.label({ text = formatMetric(r.pingMs, "%.0f ms"), fontSize = 12, color = "on_surface_variant" }),
 		}),
 	})
 end
@@ -473,9 +473,9 @@ end
 renderIdle = function()
 	local children = {
 		ui.column({ gap = 4, align = "center" }, {
-			ui.glyph({ name = "speedometer", size = 28, color = "#4f7cff" }),
-			ui.label({ text = noctalia.tr("app_name"), fontSize = 20, fontWeight = "heavy", color = "#172033" }),
-			ui.label({ text = noctalia.tr("idle_subtitle"), fontSize = 11, color = "#68758d", textAlign = "center", maxWidth = 360 }),
+			ui.glyph({ name = "speedometer", size = 28, color = "primary" }),
+			ui.label({ text = noctalia.tr("app_name"), fontSize = 20, fontWeight = "heavy", color = "on_surface" }),
+			ui.label({ text = noctalia.tr("idle_subtitle"), fontSize = 11, color = "on_surface_variant", textAlign = "center", maxWidth = 360 }),
 		}),
 		fixedSpace(8),
 	}
@@ -487,7 +487,7 @@ renderIdle = function()
 
 	table.insert(children, ui.button({ text = noctalia.tr("start_test"), glyph = "play", glyphSize = 16, variant = "primary", controlSize = "lg", onClick = startTest }))
 
-	return ui.column({ gap = 10, padding = 18, fill = "#f7f9fd", radius = 18, border = "#dbe3f0", borderWidth = 1 }, children)
+	return ui.column({ gap = 10, padding = 18, fill = "surface/0.96", radius = 18, border = "outline", borderWidth = 1 }, children)
 end
 
 renderRunning = function()
@@ -515,48 +515,48 @@ renderRunning = function()
 		phaseKey = "phase_upload"
 	end
 
-	local accent = phase == "upload" and "#f28a25" or "#16b978"
+	local accent = phase == "upload" and "secondary" or "primary"
 	local children = {
 		ui.column({ gap = 4, align = "center" }, {
-			ui.glyph({ name = "speedometer", size = 28, color = "#4f7cff" }),
-			ui.label({ text = noctalia.tr("app_name"), fontSize = 20, fontWeight = "heavy", color = "#172033" }),
-			ui.label({ text = noctalia.tr(phaseKey), fontSize = 12, color = "#68758d", textAlign = "center" }),
+			ui.glyph({ name = "speedometer", size = 28, color = "primary" }),
+			ui.label({ text = noctalia.tr("app_name"), fontSize = 20, fontWeight = "heavy", color = "on_surface" }),
+			ui.label({ text = noctalia.tr(phaseKey), fontSize = 12, color = "on_surface_variant", textAlign = "center" }),
 		}),
 		fixedSpace(12),
 		ui.column({ gap = 7, align = "center" }, {
-			ui.label({ text = backendInUse == "legacy" and "…" or string.format("%.1f", liveMbps), fontSize = 38, fontWeight = "heavy", color = "#172033" }),
-			ui.label({ text = "Mbps", fontSize = 12, fontWeight = "bold", color = "#68758d" }),
-			ui.progress({ progress = progressValue, fill = accent, track = "#dfe6f0", radius = 999, width = 300, height = 12 }),
-			ui.label({ text = string.format("%02d:%02d", math.floor(runningElapsed / 60), math.floor(runningElapsed) % 60), fontSize = 11, color = "#7a879c" }),
+			ui.label({ text = backendInUse == "legacy" and "…" or string.format("%.1f", liveMbps), fontSize = 38, fontWeight = "heavy", color = "on_surface" }),
+			ui.label({ text = "Mbps", fontSize = 12, fontWeight = "bold", color = "on_surface_variant" }),
+			ui.progress({ progress = progressValue, fill = accent, track = "outline", radius = 999, width = 300, height = 12 }),
+			ui.label({ text = string.format("%02d:%02d", math.floor(runningElapsed / 60), math.floor(runningElapsed) % 60), fontSize = 11, color = "on_surface_variant" }),
 		}),
 		fixedSpace(10),
 	}
 
 	if backendInUse ~= "legacy" then
-		table.insert(children, ui.label({ text = noctalia.tr("gauge_scale", { max = gaugeMax }), fontSize = 10, color = "#7a879c" }))
+		table.insert(children, ui.label({ text = noctalia.tr("gauge_scale", { max = gaugeMax }), fontSize = 10, color = "on_surface_variant" }))
 	end
 
 	if backendInUse == "ookla" and phase == "" and runningElapsed > 10 then
 		table.insert(children, fixedSpace(6))
-		table.insert(children, ui.label({ text = noctalia.tr("hint_stuck"), fontSize = 10, color = "#7a879c", textAlign = "center" }))
+		table.insert(children, ui.label({ text = noctalia.tr("hint_stuck"), fontSize = 10, color = "on_surface_variant", textAlign = "center" }))
 	end
 
-	return ui.column({ gap = 10, padding = 18, fill = "#f7f9fd", radius = 18, border = "#dbe3f0", borderWidth = 1, align = "center" }, children)
+	return ui.column({ gap = 10, padding = 18, fill = "surface/0.96", radius = 18, border = "outline", borderWidth = 1, align = "center" }, children)
 end
 
 renderDone = function()
 	local r = result or {}
 	local children = {
 		titleBlock(),
-		ui.separator({ thickness = 1, color = "#dbe3f0", spacing = 4 }),
+		ui.separator({ thickness = 1, color = "outline", spacing = 4 }),
 		ui.row({ gap = 10, align = "center" }, {
-			heroCircle("metric_download", "arrow-down", string.format("%.1f", r.downloadMbps or 0), "#10b981", "#e7f9f2"),
-			heroCircle("metric_upload", "arrow-up", string.format("%.1f", r.uploadMbps or 0), "#f28a25", "#fff1e4"),
+			heroCircle("metric_download", "arrow-down", string.format("%.1f", r.downloadMbps or 0), "primary", "primary/0.12"),
+			heroCircle("metric_upload", "arrow-up", string.format("%.1f", r.uploadMbps or 0), "secondary", "secondary/0.12"),
 		}),
 		ui.row({ gap = 8, align = "stretch" }, {
-			smallStat("metric_ping", formatMetric(r.pingMs, "%.1f ms"), "clock", "#7c5cff"),
-			smallStat("metric_jitter", formatMetric(r.jitterMs, "%.1f ms"), "activity", "#159ec7"),
-			smallStat("metric_packet_loss", formatMetric(r.packetLoss, "%.1f%%"), "shield-check", "#e04f68"),
+			smallStat("metric_ping", formatMetric(r.pingMs, "%.1f ms"), "clock", "tertiary"),
+			smallStat("metric_jitter", formatMetric(r.jitterMs, "%.1f ms"), "activity", "secondary"),
+			smallStat("metric_packet_loss", formatMetric(r.packetLoss, "%.1f%%"), "shield-check", "error"),
 		}),
 		fixedSpace(3),
 		sectionHeader("section_server", "server"),
@@ -590,9 +590,9 @@ renderDone = function()
 	return ui.scroll({
 		gap = 9,
 		padding = 14,
-		fill = "#f7f9fd",
+		fill = "surface",
 		radius = 18,
-		border = "#dbe3f0",
+		border = "outline",
 		borderWidth = 1,
 		flexGrow = 1,
 	}, children)
@@ -602,18 +602,18 @@ renderError = function()
 	local pkgManager = detectPackageManager()
 	local installCmd = INSTALL_COMMANDS[pkgManager] or INSTALL_COMMANDS.unknown
 
-	return ui.column({ gap = 10, padding = 18, fill = "#f7f9fd", radius = 18, border = "#f0c9cf", borderWidth = 1 }, {
-		ui.glyph({ name = "circle-x", size = 30, color = "#d94b63" }),
-		ui.label({ text = noctalia.tr("error_title"), fontSize = 18, fontWeight = "heavy", color = "#172033", textAlign = "center" }),
-		ui.label({ text = errorMessage or noctalia.tr("error_unknown"), fontSize = 12, color = "#65738b", textAlign = "center" }),
-		ui.separator({ thickness = 1, color = "#dbe3f0", spacing = 3 }),
-		ui.label({ text = noctalia.tr("error_missing_cli"), fontSize = 11, color = "#65738b", textAlign = "center" }),
-		ui.label({ text = installCmd, fontSize = 11, fontWeight = "bold", color = "#33415c", textAlign = "center" }),
+	return ui.column({ gap = 10, padding = 18, fill = "surface/0.96", radius = 18, border = "error", borderWidth = 1 }, {
+		ui.glyph({ name = "circle-x", size = 30, color = "error" }),
+		ui.label({ text = noctalia.tr("error_title"), fontSize = 18, fontWeight = "heavy", color = "on_surface", textAlign = "center" }),
+		ui.label({ text = errorMessage or noctalia.tr("error_unknown"), fontSize = 12, color = "on_surface_variant", textAlign = "center" }),
+		ui.separator({ thickness = 1, color = "outline", spacing = 3 }),
+		ui.label({ text = noctalia.tr("error_missing_cli"), fontSize = 11, color = "on_surface_variant", textAlign = "center" }),
+		ui.label({ text = installCmd, fontSize = 11, fontWeight = "bold", color = "on_surface", textAlign = "center" }),
 		ui.button({ text = noctalia.tr("copy_install_command"), glyph = "copy", glyphSize = 14, variant = "outline", controlSize = "md", onClick = function()
 			noctalia.copyToClipboard(installCmd, "text/plain")
 			noctalia.notify(noctalia.tr("app_name"), noctalia.tr("notify_command_copied"))
 		end }),
-		ui.label({ text = noctalia.tr("error_ookla_hint"), fontSize = 10, color = "#7a879c", textAlign = "center" }),
+		ui.label({ text = noctalia.tr("error_ookla_hint"), fontSize = 10, color = "on_surface_variant", textAlign = "center" }),
 		ui.button({ text = noctalia.tr("try_again"), glyph = "refresh", glyphSize = 14, variant = "primary", controlSize = "md", onClick = startTest }),
 	})
 end
