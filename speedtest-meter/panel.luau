@@ -473,7 +473,7 @@ end
 renderIdle = function()
 	local children = {
 		ui.column({ gap = 4, align = "center" }, {
-			ui.glyph({ name = "speedometer", size = 28, color = "primary" }),
+			ui.glyph({ name = "brand-speedtest", size = 28, color = "primary" }),
 			ui.label({ text = noctalia.tr("app_name"), fontSize = 20, fontWeight = "heavy", color = "on_surface" }),
 			ui.label({ text = noctalia.tr("idle_subtitle"), fontSize = 11, color = "on_surface_variant", textAlign = "center", maxWidth = 360 }),
 		}),
@@ -518,7 +518,7 @@ renderRunning = function()
 	local accent = phase == "upload" and "secondary" or "primary"
 	local children = {
 		ui.column({ gap = 4, align = "center" }, {
-			ui.glyph({ name = "speedometer", size = 28, color = "primary" }),
+			ui.glyph({ name = "brand-speedtest", size = 28, color = "primary" }),
 			ui.label({ text = noctalia.tr("app_name"), fontSize = 20, fontWeight = "heavy", color = "on_surface" }),
 			ui.label({ text = noctalia.tr(phaseKey), fontSize = 12, color = "on_surface_variant", textAlign = "center" }),
 		}),
