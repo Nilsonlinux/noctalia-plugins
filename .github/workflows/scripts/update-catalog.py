@@ -96,7 +96,7 @@ def release_times(history: list[tuple[str, int, dict]]) -> dict[str, int]:
 
 
 def release_history(
-    history: list[tuple[str, int, dict]], tip_api: int, released: dict[str, int]
+    history: list[tuple[str, int, dict]], tip_api: int, released: dict[str, int], current_version: str, current_rev: str
 ) -> list[dict]:
     """Older revisions of a plugin, one per API level below the tip's, newest first.
 
@@ -107,6 +107,17 @@ def release_history(
     """
     releases = []
     lowest_api = tip_api
+
+    # Always include the current version as a release
+    current_time = released.get(current_version, get_current_timestamp())
+    releases.append(
+        {
+            "plugin_api": tip_api,
+            "version": current_version,
+            "rev": current_rev,
+            "updated_at": current_time,
+        }
+    )
 
     for revision, _, manifest in history:
         if lowest_api <= OLDEST_SUPPORTED_PLUGIN_API:
@@ -119,6 +130,9 @@ def release_history(
         if not isinstance(version, str) or not version:
             continue
         if plugin_api >= lowest_api or plugin_api < OLDEST_SUPPORTED_PLUGIN_API:
+            continue
+        # Skip if this version is the same as current version
+        if version == current_version:
             continue
 
         # `rev` is the newest revision still on this API level, not necessarily the bump
@@ -208,6 +222,12 @@ def discover_plugins() -> list[dict]:
             manifest["_directory"] = directory
             manifest["_order"] = order.get(manifest["id"], len(order))
             
+            # Get the current revision (HEAD)
+            try:
+                current_rev = git_output("rev-parse", "HEAD").strip()
+            except subprocess.CalledProcessError:
+                current_rev = "HEAD"
+            
             # Update timestamp with release time if available, otherwise keep what we have
             if manifest["version"] in released:
                 manifest["updated_at"] = released[manifest["version"]]
@@ -219,7 +239,13 @@ def discover_plugins() -> list[dict]:
                     manifest["updated_at"] = get_current_timestamp()
                     print(f"DEBUG: Using current timestamp for new version {manifest['version']}")
             
-            manifest["releases"] = release_history(history, manifest["plugin_api"], released)
+            manifest["releases"] = release_history(
+                history, 
+                manifest["plugin_api"], 
+                released,
+                manifest["version"],
+                current_rev
+            )
             plugins.append(manifest)
         except Exception as e:
             print(f"ERROR processing {manifest_path}: {e}", file=sys.stderr)
@@ -305,7 +331,8 @@ def main() -> int:
         
         # Print summary of plugin versions
         for plugin in plugins:
-            print(f"  - {plugin['id']}: v{plugin['version']} (updated_at: {plugin['updated_at']})")
+            releases_info = ", ".join([f"v{r['version']}" for r in plugin["releases"]])
+            print(f"  - {plugin['id']}: v{plugin['version']} (releases: {releases_info})")
         
         return 0
     except Exception as e:
