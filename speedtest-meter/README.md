@@ -19,7 +19,7 @@ country) and your ISP.
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `glyph` (widget) | `glyph` | `wifi` | Icon shown in the bar for the `speedtest-widget` widget. |
+| `glyph` (widget) | `glyph` | `brand-speedtest` | Icon shown in the bar for the `speedtest-widget` widget. |
 
 ## Installation
 

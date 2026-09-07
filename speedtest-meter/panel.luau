@@ -165,7 +165,7 @@ end
 local function titleBlock()
 	return ui.column({ gap = 3, align = "center", paddingV = 4 }, {
 		ui.row({ gap = 8, align = "center" }, {
-			ui.glyph({ name = "speedometer", size = 21, color = "primary" }),
+			ui.glyph({ name = "brand-speedtest", size = 21, color = "primary" }),
 			ui.label({ text = noctalia.tr("result_title"), fontSize = 20, fontWeight = "heavy", color = "on_surface" }),
 		}),
 		ui.label({ text = "Sua conexão foi testada com sucesso", fontSize = 11, color = "on_surface_variant" }),
