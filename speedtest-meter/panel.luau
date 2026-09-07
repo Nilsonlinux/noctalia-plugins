@@ -85,62 +85,90 @@ local function textBar(value: number, width: number): string
 	return string.rep("\u{2588}", filled) .. string.rep("\u{2591}", width - filled)
 end
 
-metricRow = function(labelKey: string, value: string)
+local function fixedSpace(size: number)
+	return ui.box({ width = 1, height = size })
+end
+
+metricRow = function(labelKey: string, value: string, glyphName: string?)
 	return ui.row({
-		spacing = 8,
+		gap = 10,
 		align = "center",
-		fill = "surface",
+		fill = "#eef3fb",
 		radius = 10,
 		paddingH = 10,
-		paddingV = 6,
-	}, {
-		ui.label({ text = noctalia.tr(labelKey) .. ":", opacity = 0.7, width = 140, fontSize = 13 }),
-		ui.label({ text = value, bold = true, fontSize = 14 }),
-	})
-end
-
-local function sectionHeader(labelKey: string)
-	return ui.label({ text = noctalia.tr(labelKey), fontSize = 15, bold = true })
-end
-
--- Download/upload headline: a colored circle (width = height, radius large
--- enough to round it into a full circle) with the number inside, an arrow
--- + label below. Uses only the ↓/↑ characters (plain text, guaranteed to
--- render) instead of a ui.glyph icon name, since none of the icon names
--- tried so far matched Noctalia's actual bundled icon set. Colors are
--- explicit hex (not semantic role names like "success"/"warning") since
--- those didn't visibly differ in your last screenshot — hex is guaranteed
--- to render distinctly regardless of what your theme's roles are named.
-local function heroCircle(labelKey: string, arrow: string, valueText: string, fillColor: string)
-	return ui.column({ spacing = 6, align = "center" }, {
-		ui.column({
-			width = 100,
-			height = 100,
-			radius = 999,
-			fill = fillColor,
-			align = "center",
-			justify = "center",
-			spacing = 2,
-		}, {
-			ui.label({ text = valueText, fontSize = 17, bold = true, color = "#ffffff" }),
-			ui.label({ text = "Mbps", fontSize = 10, bold = true, color = "#ffffff", opacity = 0.9 }),
-		}),
-		ui.label({ text = arrow .. " " .. noctalia.tr(labelKey), fontSize = 12, bold = true, opacity = 0.85 }),
-	})
-end
-
--- Smaller stat used for ping/jitter/packet loss.
-local function smallStat(labelKey: string, valueText: string)
-	return ui.column({
-		spacing = 2,
-		align = "center",
-		fill = "surface",
-		radius = 12,
-		paddingH = 12,
 		paddingV = 8,
 	}, {
-		ui.label({ text = noctalia.tr(labelKey), fontSize = 11, opacity = 0.7 }),
-		ui.label({ text = valueText, fontSize = 16, bold = true }),
+		ui.glyph({ name = glyphName or "circle", size = 17, color = "#4f6b95" }),
+		ui.column({ gap = 2, flexGrow = 1, align = "start" }, {
+			ui.label({ text = noctalia.tr(labelKey), fontSize = 11, color = "#60708a" }),
+			ui.label({ text = value, fontSize = 13, fontWeight = "bold", color = "#172033", maxLines = 2, maxWidth = 320 }),
+		}),
+	})
+end
+
+local function sectionHeader(labelKey: string, glyphName: string)
+	return ui.row({ gap = 8, align = "center", paddingV = 2 }, {
+		ui.glyph({ name = glyphName, size = 17, color = "#4f7cff" }),
+		ui.label({ text = noctalia.tr(labelKey), fontSize = 13, fontWeight = "bold", color = "#33415c" }),
+	})
+end
+
+local function heroCircle(labelKey: string, arrowGlyph: string, valueText: string, accent: string, soft: string)
+	return ui.column({ gap = 7, align = "center", flexGrow = 1 }, {
+		ui.column({
+			width = 136,
+			height = 136,
+			radius = 68,
+			fill = soft,
+			border = accent,
+			borderWidth = 3,
+			align = "center",
+			justify = "center",
+			gap = 1,
+		}, {
+			ui.glyph({ name = arrowGlyph, size = 25, color = accent }),
+			ui.label({ text = valueText, fontSize = 29, fontWeight = "heavy", color = "#182238" }),
+			ui.label({ text = "Mbps", fontSize = 11, fontWeight = "bold", color = "#62708a" }),
+		}),
+		ui.row({
+			gap = 5,
+			align = "center",
+			fill = soft,
+			radius = 999,
+			paddingH = 12,
+			paddingV = 5,
+		}, {
+			ui.glyph({ name = arrowGlyph, size = 14, color = accent }),
+			ui.label({ text = noctalia.tr(labelKey), fontSize = 12, fontWeight = "bold", color = "#34415a" }),
+		}),
+	})
+end
+
+local function smallStat(labelKey: string, valueText: string, glyphName: string, accent: string)
+	return ui.column({
+		gap = 5,
+		align = "center",
+		flexGrow = 1,
+		fill = "#eef3fb",
+		radius = 12,
+		paddingH = 8,
+		paddingV = 10,
+		border = "#d7e0ef",
+		borderWidth = 1,
+	}, {
+		ui.glyph({ name = glyphName, size = 19, color = accent }),
+		ui.label({ text = noctalia.tr(labelKey), fontSize = 10, color = "#64718a", textAlign = "center" }),
+		ui.label({ text = valueText, fontSize = 15, fontWeight = "bold", color = "#1c2740", textAlign = "center" }),
+	})
+end
+
+local function titleBlock()
+	return ui.column({ gap = 3, align = "center", paddingV = 4 }, {
+		ui.row({ gap = 8, align = "center" }, {
+			ui.glyph({ name = "speedometer", size = 21, color = "#4f7cff" }),
+			ui.label({ text = noctalia.tr("result_title"), fontSize = 20, fontWeight = "heavy", color = "#172033" }),
+		}),
+		ui.label({ text = "Sua conexão foi testada com sucesso", fontSize = 11, color = "#6b7890" }),
 	})
 end
 
@@ -432,39 +460,40 @@ render = function()
 end
 
 renderSummaryCard = function(r: any)
-	return ui.column({ spacing = 4 }, {
-		ui.label({ text = noctalia.tr("last_result"), fontSize = 12, opacity = 0.6 }),
-		ui.row({ spacing = 12 }, {
-			ui.label({ text = string.format("\u{2193} %.1f Mbps", r.downloadMbps or 0) }),
-			ui.label({ text = string.format("\u{2191} %.1f Mbps", r.uploadMbps or 0) }),
-			ui.label({ text = formatMetric(r.pingMs, "%.0f ms") }),
+	return ui.column({ gap = 5, fill = "#eef3fb", radius = 12, padding = 12, border = "#d7e0ef", borderWidth = 1 }, {
+		ui.label({ text = noctalia.tr("last_result"), fontSize = 11, color = "#68758d" }),
+		ui.row({ gap = 8, align = "center", justify = "space_between" }, {
+			ui.label({ text = string.format("↓ %.1f Mbps", r.downloadMbps or 0), fontSize = 13, fontWeight = "bold", color = "#16a765" }),
+			ui.label({ text = string.format("↑ %.1f Mbps", r.uploadMbps or 0), fontSize = 13, fontWeight = "bold", color = "#e77b18" }),
+			ui.label({ text = formatMetric(r.pingMs, "%.0f ms"), fontSize = 12, color = "#59677f" }),
 		}),
 	})
 end
 
 renderIdle = function()
 	local children = {
-		ui.label({ text = noctalia.tr("app_name"), fontSize = 20, bold = true }),
-		ui.label({ text = noctalia.tr("idle_subtitle"), opacity = 0.7 }),
-		ui.spacer({ size = 12 }),
+		ui.column({ gap = 4, align = "center" }, {
+			ui.glyph({ name = "speedometer", size = 28, color = "#4f7cff" }),
+			ui.label({ text = noctalia.tr("app_name"), fontSize = 20, fontWeight = "heavy", color = "#172033" }),
+			ui.label({ text = noctalia.tr("idle_subtitle"), fontSize = 11, color = "#68758d", textAlign = "center", maxWidth = 360 }),
+		}),
+		fixedSpace(8),
 	}
 
 	if result then
 		table.insert(children, renderSummaryCard(result))
-		table.insert(children, ui.spacer({ size = 12 }))
+		table.insert(children, fixedSpace(6))
 	end
 
-	table.insert(children, ui.button({ text = noctalia.tr("start_test"), onClick = startTest }))
+	table.insert(children, ui.button({ text = noctalia.tr("start_test"), glyph = "play", glyphSize = 16, variant = "primary", controlSize = "lg", onClick = startTest }))
 
-	return ui.column({ spacing = 8, padding = 16 }, children)
+	return ui.column({ gap = 10, padding = 18, fill = "#f7f9fd", radius = 18, border = "#dbe3f0", borderWidth = 1 }, children)
 end
 
 renderRunning = function()
 	local progressValue = 0
 
 	if backendInUse == "legacy" then
-		-- No real progress signal from this backend: pulse the gauge so it
-		-- still reads as "alive" instead of a frozen bar.
 		progressValue = 0.3 + 0.2 * math.sin(runningElapsed * 2)
 	else
 		if liveMbps > gaugeMax then
@@ -486,139 +515,106 @@ renderRunning = function()
 		phaseKey = "phase_upload"
 	end
 
+	local accent = phase == "upload" and "#f28a25" or "#16b978"
 	local children = {
-		ui.label({ text = noctalia.tr("app_name"), fontSize = 18, bold = true }),
-		ui.label({ text = noctalia.tr(phaseKey), opacity = 0.75 }),
-		ui.spacer({ size = 8 }),
-		-- Speedometer gauge. NOTE: this uses only the one prop that's
-		-- certain to exist (`value`, 0..1) — a previous attempt at
-		-- `orientation`/`thickness` rendered nothing, so those aren't part
-		-- of ui.progress's real schema (or need different names/values).
-		-- Check ui.progress's actual props in your Noctalia version if you
-		-- want a fancier circular gauge.
-		ui.progress({ value = progressValue }),
-		ui.spacer({ size = 4 }),
-		ui.label({ text = textBar(progressValue, 24), fontSize = 16, opacity = 0.85 }),
-		ui.spacer({ size = 4 }),
-		-- Elapsed-time readout as a backup "it's alive" signal, independent
-		-- of whether ui.progress renders visibly on your setup.
-		ui.label({
-			text = string.format("%02d:%02d", math.floor(runningElapsed / 60), math.floor(runningElapsed) % 60),
-			fontSize = 13,
-			opacity = 0.6,
+		ui.column({ gap = 4, align = "center" }, {
+			ui.glyph({ name = "speedometer", size = 28, color = "#4f7cff" }),
+			ui.label({ text = noctalia.tr("app_name"), fontSize = 20, fontWeight = "heavy", color = "#172033" }),
+			ui.label({ text = noctalia.tr(phaseKey), fontSize = 12, color = "#68758d", textAlign = "center" }),
 		}),
+		fixedSpace(12),
+		ui.column({ gap = 7, align = "center" }, {
+			ui.label({ text = backendInUse == "legacy" and "…" or string.format("%.1f", liveMbps), fontSize = 38, fontWeight = "heavy", color = "#172033" }),
+			ui.label({ text = "Mbps", fontSize = 12, fontWeight = "bold", color = "#68758d" }),
+			ui.progress({ progress = progressValue, fill = accent, track = "#dfe6f0", radius = 999, width = 300, height = 12 }),
+			ui.label({ text = string.format("%02d:%02d", math.floor(runningElapsed / 60), math.floor(runningElapsed) % 60), fontSize = 11, color = "#7a879c" }),
+		}),
+		fixedSpace(10),
 	}
 
 	if backendInUse ~= "legacy" then
-		table.insert(children, ui.label({ text = string.format("%.1f Mbps", liveMbps), fontSize = 28, bold = true }))
-		table.insert(
-			children,
-			ui.label({
-				text = noctalia.tr("gauge_scale", { max = gaugeMax }),
-				fontSize = 11,
-				opacity = 0.6,
-			})
-		)
+		table.insert(children, ui.label({ text = noctalia.tr("gauge_scale", { max = gaugeMax }), fontSize = 10, color = "#7a879c" }))
 	end
 
-	-- Watchdog: if the ookla backend has produced no phase update after 10s,
-	-- something is likely wrong (e.g. the CLI is hanging) — say so instead
-	-- of silently sitting at "Preparando...".
 	if backendInUse == "ookla" and phase == "" and runningElapsed > 10 then
-		table.insert(children, ui.spacer({ size = 8 }))
-		table.insert(children, ui.label({ text = noctalia.tr("hint_stuck"), fontSize = 11, opacity = 0.6 }))
+		table.insert(children, fixedSpace(6))
+		table.insert(children, ui.label({ text = noctalia.tr("hint_stuck"), fontSize = 10, color = "#7a879c", textAlign = "center" }))
 	end
 
-	return ui.column({ spacing = 10, padding = 16, align = "center" }, children)
+	return ui.column({ gap = 10, padding = 18, fill = "#f7f9fd", radius = 18, border = "#dbe3f0", borderWidth = 1, align = "center" }, children)
 end
 
 renderDone = function()
 	local r = result or {}
-
 	local children = {
-		ui.label({ text = noctalia.tr("result_title"), fontSize = 20, bold = true }),
-		ui.spacer({ size = 10 }),
-
-		-- Headline numbers: download/upload as colored circles.
-		ui.row({ spacing = 20, align = "center" }, {
-			heroCircle("metric_download", "\u{2193}", string.format("%.1f", r.downloadMbps or 0), "#22c55e"),
-			heroCircle("metric_upload", "\u{2191}", string.format("%.1f", r.uploadMbps or 0), "#f97316"),
+		titleBlock(),
+		ui.separator({ thickness = 1, color = "#dbe3f0", spacing = 4 }),
+		ui.row({ gap = 10, align = "center" }, {
+			heroCircle("metric_download", "arrow-down", string.format("%.1f", r.downloadMbps or 0), "#10b981", "#e7f9f2"),
+			heroCircle("metric_upload", "arrow-up", string.format("%.1f", r.uploadMbps or 0), "#f28a25", "#fff1e4"),
 		}),
-		ui.spacer({ size = 14 }),
-
-		-- Secondary numbers: ping/jitter/packet loss, side by side.
-		ui.row({ spacing = 18, align = "center" }, {
-			smallStat("metric_ping", formatMetric(r.pingMs, "%.1f ms")),
-			smallStat("metric_jitter", formatMetric(r.jitterMs, "%.1f ms")),
-			smallStat("metric_packet_loss", formatMetric(r.packetLoss, "%.1f%%")),
+		ui.row({ gap = 8, align = "stretch" }, {
+			smallStat("metric_ping", formatMetric(r.pingMs, "%.1f ms"), "clock", "#7c5cff"),
+			smallStat("metric_jitter", formatMetric(r.jitterMs, "%.1f ms"), "activity", "#159ec7"),
+			smallStat("metric_packet_loss", formatMetric(r.packetLoss, "%.1f%%"), "shield-check", "#e04f68"),
 		}),
-
-		ui.spacer({ size = 14 }),
-		ui.separator({}),
-		ui.spacer({ size = 6 }),
-		sectionHeader("section_server"),
-		metricRow("metric_name", tostring(r.serverName or "-")),
-		metricRow("metric_host", tostring(r.serverHost or "-")),
-		metricRow("metric_location", tostring(r.serverLocation or "-")),
-		metricRow("metric_country", tostring(r.serverCountry or "-")),
-		metricRow("metric_server_ip", tostring(r.serverIp or "-")),
-
-		ui.spacer({ size = 6 }),
-		ui.separator({}),
-		ui.spacer({ size = 6 }),
-		sectionHeader("section_connection"),
-		metricRow("metric_isp", tostring(r.isp or "-")),
-		metricRow("metric_external_ip", tostring(r.externalIp or "-")),
+		fixedSpace(3),
+		sectionHeader("section_server", "server"),
+		metricRow("metric_name", tostring(r.serverName or "-"), "server"),
+		metricRow("metric_host", tostring(r.serverHost or "-"), "world"),
+		metricRow("metric_location", tostring(r.serverLocation or "-"), "map-pin"),
+		metricRow("metric_country", tostring(r.serverCountry or "-"), "flag"),
+		metricRow("metric_server_ip", tostring(r.serverIp or "-"), "server"),
+		fixedSpace(3),
+		sectionHeader("section_connection", "wifi"),
+		metricRow("metric_isp", tostring(r.isp or "-"), "wifi"),
+		metricRow("metric_external_ip", tostring(r.externalIp or "-"), "world"),
 	}
 
 	if clientInfo then
-		table.insert(children, metricRow("metric_city", tostring(clientInfo.city or "-")))
-		table.insert(children, metricRow("metric_region", tostring(clientInfo.region or "-")))
-		table.insert(children, metricRow("metric_country_ip", tostring(clientInfo.country_name or "-")))
-		table.insert(children, metricRow("metric_org", tostring(clientInfo.org or "-")))
+		table.insert(children, metricRow("metric_city", tostring(clientInfo.city or "-"), "map-pin"))
+		table.insert(children, metricRow("metric_region", tostring(clientInfo.region or "-"), "map"))
+		table.insert(children, metricRow("metric_country_ip", tostring(clientInfo.country_name or "-"), "flag"))
+		table.insert(children, metricRow("metric_org", tostring(clientInfo.org or "-"), "building"))
 	end
 
-	table.insert(children, ui.spacer({ size = 12 }))
+	table.insert(children, fixedSpace(4))
+	table.insert(children, ui.row({ gap = 8, align = "center" }, {
+		ui.button({ text = noctalia.tr("test_again"), glyph = "refresh", glyphSize = 15, variant = "primary", controlSize = "md", onClick = startTest }),
+		r.resultUrl and ui.button({ text = noctalia.tr("copy_result_link"), glyph = "copy", glyphSize = 14, variant = "outline", controlSize = "md", onClick = function()
+			noctalia.copyToClipboard(r.resultUrl, "text/plain")
+			noctalia.notify(noctalia.tr("app_name"), noctalia.tr("notify_link_copied"))
+		end }) or fixedSpace(1),
+	}))
 
-	local buttons = { ui.button({ text = noctalia.tr("test_again"), onClick = startTest }) }
-	if r.resultUrl then
-		table.insert(
-			buttons,
-			ui.button({
-				text = noctalia.tr("copy_result_link"),
-				onClick = function()
-					noctalia.copyToClipboard(r.resultUrl, "text/plain")
-					noctalia.notify(noctalia.tr("app_name"), noctalia.tr("notify_link_copied"))
-				end,
-			})
-		)
-	end
-	table.insert(children, ui.row({ spacing = 8 }, buttons))
-
-	return ui.column({ spacing = 6, padding = 16 }, children)
+	return ui.scroll({
+		gap = 9,
+		padding = 14,
+		fill = "#f7f9fd",
+		radius = 18,
+		border = "#dbe3f0",
+		borderWidth = 1,
+		flexGrow = 1,
+	}, children)
 end
 
 renderError = function()
 	local pkgManager = detectPackageManager()
 	local installCmd = INSTALL_COMMANDS[pkgManager] or INSTALL_COMMANDS.unknown
 
-	return ui.column({ spacing = 10, padding = 16 }, {
-		ui.label({ text = noctalia.tr("error_title"), fontSize = 18, bold = true }),
-		ui.label({ text = errorMessage or noctalia.tr("error_unknown"), opacity = 0.8 }),
-		ui.spacer({ size = 8 }),
-		ui.label({ text = noctalia.tr("error_missing_cli"), opacity = 0.7 }),
-		ui.button({
-			text = noctalia.tr("copy_install_command"),
-			onClick = function()
-				noctalia.copyToClipboard(installCmd, "text/plain")
-				noctalia.notify(noctalia.tr("app_name"), noctalia.tr("notify_command_copied"))
-			end,
-		}),
-		ui.label({ text = installCmd, fontSize = 11, opacity = 0.5 }),
-		ui.spacer({ size = 4 }),
-		ui.label({ text = noctalia.tr("error_ookla_hint"), fontSize = 11, opacity = 0.6 }),
-		ui.spacer({ size = 8 }),
-		ui.button({ text = noctalia.tr("try_again"), onClick = startTest }),
+	return ui.column({ gap = 10, padding = 18, fill = "#f7f9fd", radius = 18, border = "#f0c9cf", borderWidth = 1 }, {
+		ui.glyph({ name = "circle-x", size = 30, color = "#d94b63" }),
+		ui.label({ text = noctalia.tr("error_title"), fontSize = 18, fontWeight = "heavy", color = "#172033", textAlign = "center" }),
+		ui.label({ text = errorMessage or noctalia.tr("error_unknown"), fontSize = 12, color = "#65738b", textAlign = "center" }),
+		ui.separator({ thickness = 1, color = "#dbe3f0", spacing = 3 }),
+		ui.label({ text = noctalia.tr("error_missing_cli"), fontSize = 11, color = "#65738b", textAlign = "center" }),
+		ui.label({ text = installCmd, fontSize = 11, fontWeight = "bold", color = "#33415c", textAlign = "center" }),
+		ui.button({ text = noctalia.tr("copy_install_command"), glyph = "copy", glyphSize = 14, variant = "outline", controlSize = "md", onClick = function()
+			noctalia.copyToClipboard(installCmd, "text/plain")
+			noctalia.notify(noctalia.tr("app_name"), noctalia.tr("notify_command_copied"))
+		end }),
+		ui.label({ text = noctalia.tr("error_ookla_hint"), fontSize = 10, color = "#7a879c", textAlign = "center" }),
+		ui.button({ text = noctalia.tr("try_again"), glyph = "refresh", glyphSize = 14, variant = "primary", controlSize = "md", onClick = startTest }),
 	})
 end
 

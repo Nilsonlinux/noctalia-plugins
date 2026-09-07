@@ -1,89 +1,90 @@
-# Speedtest Meter — plugin Noctalia v5
+# Speedtest Meter
 
-Widget na barra + painel com velocímetro e tela final de dados técnicos completos.
+Run an internet speed test with a live speedometer, then see full technical
+results: ping, jitter, download/upload, test server (host, location,
+country) and your ISP.
 
-## Funciona independente da distro (dois backends)
+## Plugin
 
-O painel detecta, nessa ordem, qual ferramenta de speedtest existe no sistema:
+| Field | Value |
+| --- | --- |
+| ID | `nilsonlinux/speedtest-meter` |
+| Entries | Bar widget: `speedtest-widget`; Panel: `speedtest` |
 
-1. **`speedtest`** (Ookla CLI oficial) — dá progresso linha a linha em JSON, então o velocímetro
-   é 100% em tempo real (ping → download → upload). Em Arch normalmente vem via AUR
-   (ex.: `yay -S speedtest-bin`, `ookla-speedtest-bin` ou `ookla-speedtest-cli-bin` — os nomes
-   mudaram algumas vezes no AUR, vale conferir com `yay -Ss speedtest` qual está disponível hoje).
-2. **`speedtest-cli`** (Python, pacote `speedtest-cli`) — está nos repositórios oficiais da
-   maioria das distros, inclusive **Arch** (`sudo pacman -S speedtest-cli`, sem precisar de AUR).
-   Essa ferramenta não expõe progresso incremental, então nesse modo o velocímetro pulsa (efeito
-   "carregando") em vez de mostrar Mbps ao vivo — o resultado final continua completo.
+**Entries:**
+- **Widget:** `speedtest-widget` - Shows an icon in the bar; click to open the panel
+- **Panel:** `speedtest` - Runs the speed test and displays the results
 
-Se nenhum dos dois existir, a tela de erro detecta seu gerenciador de pacotes
-(pacman/apt/dnf/zypper/apk) e mostra o comando de instalação certo — no seu caso, Arch, isso é
-`sudo pacman -S speedtest-cli`.
+## Settings
 
-## Ícone do widget
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `glyph` (widget) | `glyph` | `wifi` | Icon shown in the bar for the `speedtest-widget` widget. |
 
-Confirmado e implementado com o schema real que você mandou: `[[widget.setting]]` aninhado dentro
-de `[[widget]]` no `plugin.toml` (`type = "glyph"`, `label_key`/`description_key` apontando pras
-traduções, `default = "wifi"`), lido em `widget.luau` via `noctalia.getConfig("glyph")` e
-renderizado com `ui.glyph` + `barWidget.render` (em vez do `setText` fixo de antes) — igual ao
-padrão do seu `rss-notifier`. Deve aparecer agora na tela de configurações do widget na barra.
+## Installation
 
-## Painel travava depois de fechar durante o teste
+Install via Noctalia Plugin Store.
 
-Bug real, corrigido: ao fechar o painel, o código descartava o resultado do teste em vez de só
-pausar a atualização visual — `if not panelActive then return end` no início dos callbacks de
-progresso/resultado (`onSpeedtestLine`, o callback do backend legado, `fetchClientInfo`) fazia o
-teste terminar "no vácuo" se o painel estivesse fechado naquele momento. Reabrir o painel depois
-mostrava a tela congelada pra sempre, porque aquele callback já tinha rodado e descartado tudo.
+## Requirements
 
-Agora esses callbacks sempre processam o resultado (atualizam `result`/`state` normalmente),
-independente do painel estar aberto ou fechado — só a chamada de `panel.render()` é pulada
-enquanto fechado (isso já era seguro, é só não desenhar). Reabrir o painel mostra o estado real
-(rodando, com o cronômetro retomado, ou já concluído, se tiver terminado enquanto estava fechado).
+At least one speedtest tool must be installed and on PATH:
 
-## Velocímetro não aparecia durante o teste
+- `speedtest` - the official Ookla Speedtest CLI. Gives a truly live gauge
+  (per-phase progress). Not always in official distro repos (e.g. Arch:
+  AUR, package name varies — check `yay -Ss speedtest`).
+- `speedtest-cli` - the Python speedtest-cli package. Packaged in most
+  distros' official repos (Arch: `pacman -S speedtest-cli`, also
+  Debian/Ubuntu, Fedora, openSUSE, Alpine). No incremental progress, so the
+  gauge pulses instead of tracking real numbers while it runs — the final
+  result is still complete either way.
 
-`ui.progress({ value, orientation = "circular", thickness = 10 })` não desenhava nada — os props
-`orientation`/`thickness` eram chute e claramente não existem (ou têm outro nome/valor) no seu
-Noctalia. Troquei por três camadas de feedback visual durante o teste:
+If neither is found, the error screen shows the right install command for
+the detected package manager (pacman/apt/dnf/zypper/apk).
 
-1. `ui.progress({ value = ... })` — só o prop que com certeza existe (0..1). Se seu `ui.progress`
-   aceitar outros props pra deixá-lo mais bonito (cor, espessura, formato circular), me diga quais
-   são que eu ajusto.
-2. Uma barra de texto (`████░░░░`) — não depende de nenhum prop desconhecido, é só `ui.label`,
-   então funciona garantido.
-3. Um cronômetro (mm:ss) do tempo decorrido — outra confirmação de que está rodando, mesmo se as
-   duas barras acima não aparecerem por algum motivo.
+## Usage
 
-## Detecção de backend corrigida — causa raiz confirmada
+1. Click the widget in the bar to open the panel
+2. Click "Start test" to run a speed test
+3. Watch the gauge while it runs (live numbers with the Ookla backend, a
+   pulse with the legacy backend)
+4. Review the results: download/upload, ping, jitter, packet loss, test
+   server details, your ISP and external IP
 
-No Arch, o pacote oficial `speedtest-cli` instala **dois** binários: `speedtest-cli` e também
-`speedtest` (ambos são o mesmo script Python, com nomes diferentes). Antes, o plugin via
-`speedtest` no PATH e concluía "é o CLI oficial da Ookla" — mas nesse caso é o Python, que não
-entende as flags `--format=json --progress=yes`, então não produzia nada útil e o velocímetro
-ficava travado em "Preparando...".
+## Dependencies
 
-Agora, antes de confiar em `speedtest`, o plugin roda `speedtest --version` e só usa o backend
-"ookla" (streaming ao vivo) se a saída mencionar "Ookla". Caso contrário — como no seu caso —, cai
-automaticamente pro backend "legacy" via `speedtest-cli` (que você confirmou funcionar 100% no
-terminal), com o velocímetro em modo "pulso" (sem progresso incremental, mas resultado final
-completo).
+**stdbuf** (coreutils) - forces line-buffered output from the Ookla CLI so
+the live gauge updates in real time instead of only at the end. Present on
+virtually every Linux system.
 
-## Pontos que você deve conferir/ajustar
+## Notes for further development
 
-O `.txt` que você me passou documenta a API Luau em runtime (`noctalia.*`, `ui.*`, `panel.*`,
-callbacks de entrada), mas **não** documenta:
+- `speedtest` on PATH isn't proof it's the Ookla CLI: some distros' Python
+  `speedtest-cli` package also installs a `speedtest` binary (same tool,
+  different entry point name). `speedtest --version` is checked for the
+  string "Ookla" before trusting it; otherwise the plugin falls back to
+  `speedtest-cli`.
+- `ui.progress`'s exact prop schema (beyond `value`, 0..1) isn't confirmed —
+  a text-based bar (block characters) and an elapsed-time readout are shown
+  alongside it as guaranteed-to-render fallbacks.
+- Icon names tried for `ui.glyph` in the results screen (download, upload,
+  timer, dns, etc.) turned out not to exist in this Noctalia's bundled icon
+  set — they rendered as random unrelated glyphs instead of failing
+  visibly, so they were removed entirely rather than guessed a fourth time.
+  The results screen is icon-free plain text (plus the ↓/↑ characters,
+  which render fine since they're just text) until the real icon name list
+  is known.
+- The download/upload headline switched from stat cards to colored circles
+  per request. Colors are explicit hex (`#22c55e` green, `#f97316` orange)
+  rather than semantic role names (`"success"`/`"warning"`), since the
+  earlier role-name attempt rendered with no visible color difference in
+  testing — hex is guaranteed to show up regardless of what this theme's
+  color roles are actually called. `fill`/`width`/`height`/`radius` on
+  `ui.column` are confirmed working (that's how the circle and the earlier
+  `rss-notifier` badge pill are built).
+- `[[panel]]` field names (`title`/`width`/`height`) in `plugin.toml` are
+  still unconfirmed; `[[widget]]`/`[[widget.setting]]` are confirmed against
+  a working `rss-notifier` plugin.
 
-- **O schema do `plugin.toml`** — escrevi por convenção; compare com o `plugin.toml` do seu
-  `link-ip-monitor` (que já funciona) se algo não carregar.
-- **As props exatas de `ui.progress`** (se `orientation = "circular"` existe mesmo) e de
-  `ui.input` (`value`/`placeholder`/`onChange`) — são melhores palpites, comentados no código.
-  Se `ui.input` não aceitar `onChange`, o campo de ícone pode precisar de ajuste.
+## License
 
-## Arquivos
-
-- `plugin.toml` — manifesto do plugin.
-- `widget.luau` — widget da barra (ícone configurável + abre o painel).
-- `panel.luau` — toda a lógica: detecção de backend/distro, streaming ou execução do teste,
-  normalização do resultado, persistência do último resultado, geolocalização extra do cliente,
-  e o campo de ícone do widget.
-- `translations/en.json`, `translations/pt-BR.json` — strings de interface.
+MIT

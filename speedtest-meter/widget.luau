@@ -10,7 +10,7 @@ local function tr(key: string): string
 	return noctalia.tr(key)
 end
 
-local DEFAULT_GLYPH = "s-turn-left" -- fallback if no icon is configured yet; any valid glyph name works
+local DEFAULT_GLYPH = "wifi" -- fallback if no icon is configured yet; any valid glyph name works
 
 local function render()
 	local glyphName = noctalia.getConfig("glyph")
