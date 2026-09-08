@@ -5,14 +5,13 @@ plugin_api   = 18
 author       = "Nilsonlinux"
 license      = "MIT"
 icon         = "brand-speedtest"
-description  = "Run an internet speed test with a live speedometer, then show full technical results: ping, jitter, download/upload, server host, location, country and ISP."
+description  = "Run an internet speed test with a live speedometer and detailed results."
 tags         = ["network", "indicator", "bar", "panel"]
 dependencies = ["speedtest", "speedtest-cli", "stdbuf"]
 
 [[panel]]
 id = "speedtest"
 entry = "panel.luau"
-title = "Speedtest Meter"
 width = 470
 height = 700
 
@@ -23,6 +22,6 @@ entry = "widget.luau"
   [[widget.setting]]
   key             = "glyph"
   type            = "glyph"
-  label_key       = "settings.glyph.label"
-  description_key = "settings.glyph.description"
+  label_key       = "settings_glyph_label"
+  description_key = "settings_glyph_description"
   default         = "brand-speedtest"
