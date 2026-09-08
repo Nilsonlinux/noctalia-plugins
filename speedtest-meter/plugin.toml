@@ -7,7 +7,7 @@ license      = "MIT"
 icon         = "brand-speedtest"
 description  = "Run an internet speed test with a live speedometer, then show full technical results: ping, jitter, download/upload, server host, location, country and ISP."
 tags         = ["network", "indicator", "bar", "panel"]
-dependencies = ["speedtest-cli"]
+dependencies = ["speedtest", "speedtest-cli", "stdbuf"]
 
 [[panel]]
 id = "speedtest"
