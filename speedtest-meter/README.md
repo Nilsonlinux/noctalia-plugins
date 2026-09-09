@@ -99,8 +99,6 @@ Install via Noctalia Plugin Store.
    pulse with the legacy backend)
 4. Review the results: download/upload, ping, jitter, packet loss, test
    server details, your ISP and external IP
-5. Persistent history saved to `/history.json`
-  Last 5 tests   
 
 ## Panel IPC Command
 
@@ -122,7 +120,7 @@ noctalia msg panel-toggle nilsonlinux/speedtest-meter:speedtest
 - Color/style props (`fill`, `radius`, `color` role names like
   `primary`/`secondary`/`on_surface_variant`, and the `"role/opacity"`
   shorthand like `"primary/0.12"`) are confirmed working.
- 
+
 ## License
 
 MIT
