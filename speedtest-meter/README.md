@@ -120,7 +120,9 @@ noctalia msg panel-toggle nilsonlinux/speedtest-meter:speedtest
 - Color/style props (`fill`, `radius`, `color` role names like
   `primary`/`secondary`/`on_surface_variant`, and the `"role/opacity"`
   shorthand like `"primary/0.12"`) are confirmed working.
-
+- Persistent history saved to `/history.json`
+  Last 5 tests
+ 
 ## License
 
 MIT
