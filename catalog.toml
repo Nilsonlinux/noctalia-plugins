@@ -65,12 +65,6 @@ version = "1.0.0"
 updated_at = 1788127260
 rev = "675d8c10934daeca57db6b781b6b4cd58285143e"
 
-[[plugin.release]]
-plugin_api = 14
-version = "1.0.1"
-updated_at = 1788559302
-rev = "e57c7091bca5a227c86bfd79335d4bc044d96489"
-
 [[plugin]]
 id = "nilsonlinux/speedtest-meter"
 name = "Speedtest Meter"
