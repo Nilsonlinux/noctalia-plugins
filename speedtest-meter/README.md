@@ -85,7 +85,23 @@ automatically.
   to `https://ipapi.co/json/` to resolve the client's public IP into
   geolocation data (city, region, country, organization) shown alongside
   the test server's own location. No data is stored or transmitted beyond
-  that single request.
+  that single request.  
+
+## Legacy `speedtest-cli` behavior
+
+The human-readable stream is kept on screen in the original order. When `Upload:` arrives, the plugin stays on the live Upload phase while the final Upload number animates into place.
+
+Only after the bandwidth test has completed does the plugin start the metadata enrichment:
+
+1. Query the current Speedtest.net server directory using the sponsor/city shown by the completed test.
+2. Read the server `host` and `country` from that directory.
+3. Resolve the server hostname to an IPv4 address.
+4. Use `ipapi.co/<server-ip>/json/` only when Host or Country is still missing.
+5. Persist every successful ipapi response in `/ipapi-cache.json`, keyed by server IP, so the same server IP is never queried again on later tests.
+6. If ipapi returns HTTP 429, keep a global cooldown in the cache to avoid sending more requests until the cooldown expires.
+7. Show the final result screen only after the Upload animation and metadata phase are complete, with a timeout fallback.
+
+The `https://ipapi.co/json/` client-IP request is not used for server metadata.  
 
 ## Installation
 
@@ -107,19 +123,6 @@ To toggle the panel from outside the plugin:
 ```
 noctalia msg panel-toggle nilsonlinux/speedtest-meter:speedtest
 ```
-
-## Notes for further development
-
-- `[[panel]]` field names (`width`/`height`) in `plugin.toml` are still
-  unconfirmed against Noctalia's real schema; `[[widget]]` /
-  `[[widget.setting]]` are confirmed against a working `rss-notifier`
-  plugin.
-- Icon names (`brand-speedtest`, `arrow-down`, `arrow-up`, `clock`,
-  `activity`, `shield-check`, etc.) are Tabler Icons names, confirmed
-  rendering correctly in testing.
-- Color/style props (`fill`, `radius`, `color` role names like
-  `primary`/`secondary`/`on_surface_variant`, and the `"role/opacity"`
-  shorthand like `"primary/0.12"`) are confirmed working.
 
 ## License
 

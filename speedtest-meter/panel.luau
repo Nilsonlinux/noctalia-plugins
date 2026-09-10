@@ -28,18 +28,38 @@ local runningElapsed = 0 -- seconds since the current test started (drives the p
 local errorMessage: string? = nil
 local result: any = nil -- normalized result table (see normalizeOokla/normalizeLegacy)
 local history: any = {} -- newest-first list, capped at five results
-local clientInfo: any = nil -- decoded geolocation JSON for the local client
 local panelActive = false
 local progressValue = 0 -- 0 to 1 for progress tracking
 local timerRunning = false -- flag to control timer updates
-local simulatedMbps = 0 -- valor simulado para o backend legacy
-local lastDownloadMbps = 0 -- último resultado de download
-local lastUploadMbps = 0 -- último resultado de upload
+local simulatedMbps = 0
+local lastDownloadMbps = 0
+local lastUploadMbps = 0
+local liveDownloadMbps = 0
+local liveUploadMbps = 0
+local livePingMs: number? = nil
+local liveServerName: string? = nil
+local liveServerLocation: string? = nil
+local liveIsp: string? = nil
+local liveExternalIp: string? = nil
+local liveServerHost: string? = nil
+local liveServerCountry: string? = nil
+local liveServerIp: string? = nil
+local liveServerId: string? = nil
+local animatedDownloadMbps = 0
+local animatedUploadMbps = 0
+local testLogs: any = {}
+local finishingResult = false
+local metadataReady = false
+local metadataInFlight = false
+local finalizingElapsed = 0
+local ipApiCache: any = {}
+local ipApiCacheLoaded = false
+local ipApiRateLimitedUntil = 0
 
 local DATA_FILE = "/last-result.json"
+local IPAPI_CACHE_FILE = "/ipapi-cache.json"
 local OOKLA_CMD = "speedtest --accept-license --accept-gdpr --format=json --progress=yes"
-local LEGACY_CMD = "speedtest-cli --json --secure"
-local LEGACY_TIMEOUT_MS = 60000 -- runAsync's hard ceiling; slow links may not finish in time
+local LEGACY_CMD = "speedtest-cli --secure"
 
 -- Best-effort per-distro install command for the (widely packaged) legacy
 -- Python speedtest-cli, keyed by the package manager binary that's present.
@@ -55,10 +75,11 @@ local INSTALL_COMMANDS = {
 -- Forward declarations so functions can reference each other regardless of
 -- definition order below.
 local render, renderIdle, renderRunning, renderDone, renderError
+local addTestLog, parseLegacyLogLine, renderLiveLog, liveMetricCircle, renderLiveInfoCards
 local metricRow, renderHistory, renderHistoryCard, speedMetricSquare
-local startTest, proceedWithLegacyOrError, runOoklaBackend, runLegacyBackend, onSpeedtestLine
+local startTest, proceedWithLegacyOrError, runOoklaBackend, runLegacyBackend, onSpeedtestLine, prepareLegacyServerMetadata, fetchLegacyServerMetadataAfterTest
 local normalizeOokla, normalizeLegacy
-local saveLastResult, loadLastResult, loadHistory, addHistory, fetchClientInfo
+local saveLastResult, loadLastResult, loadHistory, addHistory
 local detectPackageManager
 
 -- ── Helpers ───────────────────────────────────────────────────────────────
@@ -162,21 +183,29 @@ local function heroCircle(labelKey: string, arrowGlyph: string, valueText: strin
 	})
 end
 
-local function smallStat(labelKey: string, valueText: string, glyphName: string, accent: string)
+local function smallStat(labelKey: string, valueText: string, glyphName: string, accent: string, cardWidth: number?, cardHeight: number?)
+	local width = cardWidth or 137
+	local height = cardHeight or 76
 	return ui.column({
-		gap = 5,
+		width = width,
+		height = height,
+		minWidth = width,
+		maxWidth = width,
+		minHeight = height,
+		maxHeight = height,
+		gap = 4,
 		align = "center",
-		flexGrow = 1,
+		justify = "center",
 		fill = "surface_variant",
 		radius = 12,
-		paddingH = 8,
-		paddingV = 10,
+		paddingH = 4,
+		paddingV = 5,
 		border = "outline",
 		borderWidth = 1,
 	}, {
-		ui.glyph({ name = glyphName, size = 19, color = accent }),
-		ui.label({ text = noctalia.tr(labelKey), fontSize = 10, color = "on_surface_variant", textAlign = "center" }),
-		ui.label({ text = valueText, fontSize = 15, fontWeight = "bold", color = "on_surface", textAlign = "center" }),
+		ui.glyph({ name = glyphName, size = 18, color = accent }),
+		ui.label({ text = noctalia.tr(labelKey), fontSize = 9, color = "on_surface_variant", textAlign = "center", maxLines = 1, maxWidth = width - 12 }),
+		ui.label({ text = valueText, fontSize = 12, fontWeight = "bold", color = "on_surface", textAlign = "center", maxLines = 2, maxWidth = width - 12 }),
 	})
 end
 
@@ -188,6 +217,161 @@ local function titleBlock()
 		}),
 		ui.label({ text = noctalia.tr("connection_tested_successfully"), fontSize = 11, color = "on_surface_variant" }),
 	})
+end
+
+-- ── Live CLI log + metrics ────────────────────────────────────────────────
+
+addTestLog = function(line: string)
+	line = noctalia.string.trim(line)
+	if line == "" then
+		return
+	end
+	-- Keep the latest 12 lines: enough to show the complete speedtest-cli
+	-- sequence without allowing the panel to grow indefinitely.
+	if #testLogs >= 12 then
+		table.remove(testLogs, 1)
+	end
+	testLogs[#testLogs + 1] = line
+end
+
+local function extractNumber(text: string, pattern: string): number?
+	local value = string.match(text, pattern)
+	return value and tonumber(value) or nil
+end
+
+parseLegacyLogLine = function(line: string)
+	local lower = string.lower(line)
+
+	if string.find(lower, "retrieving speedtest.net configuration", 1, true) then
+		phase = "ping"
+		progressValue = math.max(progressValue, 0.05)
+	elseif string.find(lower, "testing from", 1, true) then
+		liveIsp = string.match(line, "Testing from%s+(.+)%s+%(([%d%.]+)%)") or liveIsp
+		liveExternalIp = string.match(line, "%(([%d%.]+)%)") or liveExternalIp
+		progressValue = math.max(progressValue, 0.10)
+	elseif string.find(lower, "selecting best server", 1, true) then
+		phase = "ping"
+		progressValue = math.max(progressValue, 0.20)
+	elseif string.find(lower, "hosted by", 1, true) then
+		phase = "ping"
+		liveServerName, liveServerLocation = string.match(line, "Hosted by%s+(.+)%s+%(([^%)]+)%)")
+		livePingMs = extractNumber(line, ":%s*([%d%.]+)%s*ms")
+		progressValue = math.max(progressValue, 0.30)
+	elseif string.find(lower, "testing download speed", 1, true) then
+		phase = "download"
+		progressValue = math.max(progressValue, 0.35)
+	elseif string.find(lower, "download:", 1, true) then
+		phase = "download"
+		liveDownloadMbps = extractNumber(line, "Download:%s*([%d%.]+)%s*Mbit/s") or liveDownloadMbps
+		progressValue = math.max(progressValue, 0.65)
+		lastDownloadMbps = liveDownloadMbps
+	elseif string.find(lower, "testing upload speed", 1, true) then
+		phase = "upload"
+		progressValue = math.max(progressValue, 0.70)
+	elseif string.find(lower, "upload:", 1, true) then
+		phase = "upload"
+		liveUploadMbps = extractNumber(line, "Upload:%s*([%d%.]+)%s*Mbit/s") or liveUploadMbps
+		progressValue = 1.0
+		lastUploadMbps = liveUploadMbps
+	end
+end
+
+renderLiveLog = function()
+	local logChildren = {}
+	for i = 1, #testLogs do
+		local line = testLogs[i]
+		local isDownload = string.find(string.lower(line), "download", 1, true) ~= nil
+		local isUpload = string.find(string.lower(line), "upload", 1, true) ~= nil
+		local color = isUpload and "secondary" or (isDownload and "primary" or "on_surface_variant")
+		logChildren[#logChildren + 1] = ui.label({
+			text = line,
+			fontSize = 9,
+			fontFamily = "monospace",
+			color = color,
+			maxLines = 1,
+			maxWidth = 420,
+		})
+	end
+	if #logChildren == 0 then
+		logChildren[1] = ui.label({ text = noctalia.tr("log_waiting"), fontSize = 9, color = "on_surface_variant" })
+	end
+	return ui.column({
+		gap = 2,
+		paddingH = 10,
+		paddingV = 8,
+		fill = "surface_variant",
+		radius = 12,
+		border = "outline",
+		borderWidth = 1,
+		align = "start",
+	}, logChildren)
+end
+
+liveMetricCircle = function(labelKey: string, value: number, accent: string, soft: string, arrowGlyph: string, active: boolean)
+	return ui.column({
+		width = 154,
+		height = 154,
+		radius = 77,
+		fill = active and soft or "surface_variant",
+		border = active and accent or "outline",
+		borderWidth = active and 3 or 1,
+		align = "center",
+		justify = "center",
+		gap = 2,
+	}, {
+		ui.glyph({ name = arrowGlyph, size = 24, color = accent }),
+		ui.label({ text = noctalia.tr(labelKey), fontSize = 11, fontWeight = "bold", color = "on_surface_variant" }),
+		ui.label({ text = string.format("%.2f", value or 0), fontSize = 31, fontWeight = "heavy", color = "on_surface" }),
+		ui.label({ text = noctalia.tr("unit_mbps"), fontSize = 10, color = "on_surface_variant" }),
+	})
+end
+
+renderLiveInfoCards = function()
+	-- The rows deliberately have NO width/height/min/max constraints.
+	-- Only the cards themselves are fixed-size.  This prevents Noctalia's
+	-- layout container from drawing/expanding an extra box around the cards
+	-- on the first frame after the plugin is reloaded.
+	local cardWidth = 146
+	local cardHeight = 74
+
+	local row1 = ui.row({
+		gap = 8,
+		align = "start",
+		justify = "center",
+		padding = 0,
+		fill = "#00000000",
+		border = "#00000000",
+		borderWidth = 0,
+		radius = 0,
+	}, {
+		smallStat("metric_ping", formatMetric(livePingMs, "%.3f ms"), "clock", "tertiary", cardWidth, cardHeight),
+		smallStat("metric_server", tostring(liveServerName or "-"), "server", "primary", cardWidth, cardHeight),
+	})
+
+	local row2 = ui.row({
+		gap = 8,
+		align = "start",
+		justify = "center",
+		padding = 0,
+		fill = "#00000000",
+		border = "#00000000",
+		borderWidth = 0,
+		radius = 0,
+	}, {
+		smallStat("metric_isp", tostring(liveIsp or "-"), "wifi", "secondary", cardWidth, cardHeight),
+		smallStat("metric_location", tostring(liveServerLocation or "-"), "map-pin", "tertiary", cardWidth, cardHeight),
+	})
+
+	return ui.column({
+		gap = 8,
+		align = "center",
+		justify = "start",
+		padding = 0,
+		fill = "#00000000",
+		border = "#00000000",
+		borderWidth = 0,
+		radius = 0,
+	}, { row1, row2 })
 end
 
 -- ── Package manager detection (for install instructions) ──────────────────
@@ -243,10 +427,10 @@ normalizeLegacy = function(data: any)
 		jitterMs = nil,
 		packetLoss = nil,
 		serverName = server.sponsor,
-		serverHost = server.host,
+		serverHost = server.host or (server.url and string.match(server.url, "^[a-zA-Z]+://([^/:]+)")),
 		serverLocation = server.name,
-		serverCountry = server.country,
-		serverIp = nil,
+		serverCountry = server.country or server.country_name or server.cc,
+		serverIp = server.ip,
 		isp = client.isp,
 		externalIp = client.ip,
 		resultUrl = data.share,
@@ -346,18 +530,406 @@ addHistory = function(data: any)
 	persistHistory()
 end
 
--- Optional enrichment: adds the client's own public IP geolocation
--- (city/region/country/ISP org) alongside whatever the backend reported.
-fetchClientInfo = function()
-	noctalia.http({ url = "https://ipapi.co/json/" }, function(response)
-		if response.ok and response.status == 200 then
+-- Metadata enrichment happens only after the real bandwidth test finishes.
+-- ipapi.co is a fallback only: when the server host/country are already known,
+-- no request is made. Successful ipapi responses are persisted by server IP so
+-- repeated tests against the same server do not consume the API quota again.
+local function loadIpApiCache()
+	if ipApiCacheLoaded then
+		return
+	end
+	ipApiCacheLoaded = true
+	ipApiCache = {}
+	ipApiRateLimitedUntil = 0
+
+	local dir = noctalia.pluginDataDir()
+	if not dir then
+		return
+	end
+	local contents = noctalia.readFile(dir .. IPAPI_CACHE_FILE)
+	if not contents or contents == "" then
+		return
+	end
+
+	local data = noctalia.json.decode(contents)
+	if type(data) ~= "table" then
+		return
+	end
+
+	-- Current format: { entries = { [ip] = {...} }, meta = { ... } }
+	if type(data.entries) == "table" then
+		ipApiCache = data.entries
+		if type(data.meta) == "table" then
+			ipApiRateLimitedUntil = tonumber(data.meta.rateLimitedUntil or 0) or 0
+		end
+	else
+		-- Backward-compatible with a plain {[ip] = {...}} cache.
+		ipApiCache = data
+		ipApiCache._meta = nil
+	end
+end
+
+local function saveIpApiCache()
+	local dir = noctalia.pluginDataDir()
+	if not dir then
+		return
+	end
+	local payload = {
+		entries = ipApiCache,
+		meta = {
+			rateLimitedUntil = ipApiRateLimitedUntil,
+		},
+	}
+	local encoded = noctalia.json.encode(payload, false)
+	if encoded then
+		noctalia.writeFile(dir .. IPAPI_CACHE_FILE, encoded)
+	end
+end
+
+local function persistServerMetadata()
+	if result then
+		saveLastResult(result)
+	end
+	if history[1] then
+		history[1].serverHost = liveServerHost
+		history[1].serverCountry = liveServerCountry
+		history[1].serverIp = liveServerIp
+		persistHistory()
+	end
+	render()
+end
+
+local function applyIpApiData(ip: string, data: any)
+	if not data then
+		return
+	end
+
+	local resolvedIp = tostring(data.ip or ip or "")
+	if resolvedIp ~= "" then
+		liveServerIp = resolvedIp
+	end
+
+	local country = data.country_name or data.country
+	if country and tostring(country) ~= "" then
+		liveServerCountry = tostring(country)
+	end
+
+	local hostname = data.hostname
+	if hostname and tostring(hostname) ~= "" then
+		liveServerHost = tostring(hostname)
+	end
+
+	if result then
+		result.serverIp = liveServerIp
+		result.serverCountry = liveServerCountry
+		result.serverHost = liveServerHost
+	end
+end
+
+local function queryIpApiCached(ip: string, fallbackCountry: string?)
+	loadIpApiCache()
+	if not ip or ip == "" then
+		metadataReady = true
+		persistServerMetadata()
+		return
+	end
+
+	local now = os.time()
+	local cached = ipApiCache[ip]
+	if type(cached) == "table" then
+		if cached.ok == true then
+			applyIpApiData(ip, cached)
+			metadataReady = true
+			persistServerMetadata()
+			return
+		end
+		if cached.retryUntil and tonumber(cached.retryUntil) and now < tonumber(cached.retryUntil) then
+			metadataReady = true
+			persistServerMetadata()
+			return
+		end
+	end
+
+	-- A 429 applies to the API quota, not just one server. Avoid sending
+	-- another request during the cooldown even when a different server is used.
+	if ipApiRateLimitedUntil > now then
+		metadataReady = true
+		persistServerMetadata()
+		return
+	end
+
+	-- The country already came from Speedtest's server metadata. Only hit
+	-- ipapi when it can still add something useful (country/hostname).
+	local needCountry = not liveServerCountry or liveServerCountry == ""
+	local needHost = not liveServerHost or liveServerHost == ""
+	if not needCountry and not needHost then
+		metadataReady = true
+		persistServerMetadata()
+		return
+	end
+
+	noctalia.http({ url = "https://ipapi.co/" .. ip .. "/json/" }, function(response)
+		local ok = response and response.ok and response.status == 200 and response.body
+		if ok then
 			local data = noctalia.json.decode(response.body)
-			if data then
-				clientInfo = data
-				render() -- no-op internally if the panel is closed
+			if data and not data.error then
+				local entry = {
+					ok = true,
+					ip = tostring(data.ip or ip),
+					country_name = data.country_name,
+					country = data.country,
+					hostname = data.hostname,
+					fetchedAt = os.time(),
+				}
+				ipApiCache[ip] = entry
+				saveIpApiCache()
+				applyIpApiData(ip, entry)
+			else
+				ipApiCache[ip] = {
+					ok = false,
+					retryUntil = os.time() + 600,
+					status = response and response.status or 0,
+				}
+				saveIpApiCache()
+			end
+		else
+			local status = response and tonumber(response.status) or 0
+			local retrySeconds = status == 429 and 3600 or 600
+			if status == 429 then
+				ipApiRateLimitedUntil = os.time() + retrySeconds
+			end
+			ipApiCache[ip] = {
+				ok = false,
+				retryUntil = os.time() + retrySeconds,
+				status = status,
+			}
+			saveIpApiCache()
+			-- Keep the server country we already know as a fallback.
+			if fallbackCountry and tostring(fallbackCountry) ~= "" and (not liveServerCountry or liveServerCountry == "") then
+				liveServerCountry = tostring(fallbackCountry)
 			end
 		end
+
+		metadataReady = true
+		persistServerMetadata()
 	end)
+end
+
+local function resolveServerIpAndEnrich(serverHost: string, fallbackCountry: string?)
+	if not serverHost or serverHost == "" then
+		metadataReady = true
+		persistServerMetadata()
+		return false
+	end
+
+	local host = string.match(serverHost, "^[a-zA-Z]+://([^/:]+)") or string.match(serverHost, "^([^:/]+)")
+	if not host or host == "" then
+		metadataReady = true
+		persistServerMetadata()
+		return false
+	end
+
+	local function parseIpv4(text: string?): string?
+		return string.match(text or "", "(%d+%.%d+%.%d+%.%d+)")
+	end
+
+	local function gotIp(ip: string?)
+		if ip and ip ~= "" then
+			liveServerIp = ip
+			if result then
+				result.serverIp = ip
+			end
+			-- ipapi is needed only if host or country is still missing.
+			queryIpApiCached(ip, fallbackCountry)
+		else
+			metadataReady = true
+			persistServerMetadata()
+		end
+	end
+
+	local function resolveWithPython()
+		if not noctalia.commandExists("python3") then
+			metadataReady = true
+			persistServerMetadata()
+			return
+		end
+		local safeHost = string.gsub(host, "'", "'\\''")
+		local started = noctalia.runAsync("python3 -c \"import socket; print(socket.gethostbyname('" .. safeHost .. "'))\"", function(res)
+			gotIp(parseIpv4(res and res.stdout))
+		end, 3000)
+		if not started then
+			metadataReady = true
+			persistServerMetadata()
+		end
+	end
+
+	local started = noctalia.runAsync("getent ahostsv4 " .. host, function(res)
+		local ip = parseIpv4(res and res.stdout)
+		if ip then
+			gotIp(ip)
+			return
+		end
+
+		local fallbackStarted = noctalia.runAsync("getent hosts " .. host, function(fallback)
+			local fallbackIp = parseIpv4(fallback and fallback.stdout)
+			if fallbackIp then
+				gotIp(fallbackIp)
+			else
+				resolveWithPython()
+			end
+		end, 3000)
+		if not fallbackStarted then
+			resolveWithPython()
+		end
+	end, 3000)
+
+	if not started then
+		resolveWithPython()
+	end
+
+	return true
+end
+
+-- Build the server metadata from Speedtest.net's current server directory,
+-- matching the server actually displayed by the completed test (sponsor + city).
+-- This avoids relying on the human-readable speedtest-cli log, which only prints
+-- sponsor/city/ping. The resolved host is then used for server-IP resolution and
+-- ipapi.co is contacted only when the cached/server metadata cannot complete the cards.
+fetchLegacyServerMetadataAfterTest = function(attempt: number?)
+	attempt = attempt or 1
+	metadataInFlight = true
+
+	local sponsor = tostring(liveServerName or "")
+	local city = tostring(liveServerLocation or "")
+
+	local function applyServer(server: any): boolean
+		if not server then
+			return false
+		end
+		local host = tostring(server.host or "")
+		local country = tostring(server.country or server.country_name or "")
+		local name = tostring(server.name or "")
+		local serverSponsor = tostring(server.sponsor or "")
+		if host == "" and server.url then
+			host = string.match(tostring(server.url), "^[a-zA-Z]+://([^/:]+)") or ""
+		end
+
+		if host ~= "" then liveServerHost = host end
+		if country ~= "" then liveServerCountry = country end
+		if name ~= "" then liveServerLocation = name end
+		if serverSponsor ~= "" then liveServerName = serverSponsor end
+		if server.id then liveServerId = tostring(server.id) end
+		if server.ip then liveServerIp = tostring(server.ip) end
+		if result then
+			result.serverHost = liveServerHost
+			result.serverCountry = liveServerCountry
+			result.serverLocation = liveServerLocation
+			result.serverName = liveServerName
+			result.serverIp = liveServerIp
+		end
+		if history[1] then
+			history[1].serverHost = liveServerHost
+			history[1].serverCountry = liveServerCountry
+			history[1].serverLocation = liveServerLocation
+			history[1].serverName = liveServerName
+			history[1].serverIp = liveServerIp
+		end
+		return host ~= ""
+	end
+
+	local function finish()
+		metadataInFlight = false
+		if result then
+			saveLastResult(result)
+		end
+		if history[1] then
+			persistHistory()
+		end
+		render()
+		if liveServerIp and liveServerIp ~= "" then
+			queryIpApiCached(liveServerIp, liveServerCountry)
+		elseif liveServerHost and liveServerHost ~= "" then
+			resolveServerIpAndEnrich(liveServerHost, liveServerCountry)
+		else
+			metadataReady = true
+			render()
+		end
+	end
+
+	local function requestServerList(search: string, onDone: (any) -> boolean)
+		local encoded = string.gsub(search or "", " ", "%%20")
+		local url = "https://www.speedtest.net/api/js/servers?engine=js&https_functional=true&limit=100&search=" .. encoded
+		noctalia.http({ url = url }, function(response)
+			if response and response.ok and response.status == 200 and response.body then
+				local list = noctalia.json.decode(response.body)
+				if type(list) == "table" then
+					local best = nil
+					for _, server in ipairs(list) do
+						local ss = string.lower(tostring(server.sponsor or ""))
+						local sn = string.lower(tostring(server.name or ""))
+						local wantSponsor = string.lower(sponsor)
+						local wantCity = string.lower(city)
+						if sponsor ~= "" and city ~= "" and ss == wantSponsor and sn == wantCity then
+							best = server
+							break
+						end
+						if not best and sponsor ~= "" and ss == wantSponsor then
+							best = server
+						end
+					end
+					if best and onDone(best) then
+						finish()
+						return
+					end
+				end
+			end
+
+			-- Compatibility fallback: ask speedtest-cli for the same server metadata
+			-- without another bandwidth measurement.
+			local jsonStarted = noctalia.runAsync("speedtest-cli --json --secure --no-download --no-upload", function(res)
+				local output = res and (res.stdout or res.stderr or "") or ""
+				local data = res and not res.timedOut and res.exitCode == 0 and output ~= "" and noctalia.json.decode(output) or nil
+				if data then
+					local normalized = normalizeLegacy(data)
+					if normalized.serverHost and normalized.serverHost ~= "" then liveServerHost = normalized.serverHost end
+					if normalized.serverCountry and normalized.serverCountry ~= "" then liveServerCountry = normalized.serverCountry end
+					if normalized.serverLocation and normalized.serverLocation ~= "" then liveServerLocation = normalized.serverLocation end
+					if normalized.serverName and normalized.serverName ~= "" then liveServerName = normalized.serverName end
+					if normalized.serverIp and normalized.serverIp ~= "" then liveServerIp = normalized.serverIp end
+					if result then
+						result.serverHost = liveServerHost
+						result.serverCountry = liveServerCountry
+						result.serverLocation = liveServerLocation
+						result.serverName = liveServerName
+						result.serverIp = liveServerIp
+						result.isp = normalized.isp or result.isp
+						result.externalIp = normalized.externalIp or result.externalIp
+					end
+					finish()
+				else
+					if attempt < 3 then
+						noctalia.runAsync("sleep 0.5", function()
+							fetchLegacyServerMetadataAfterTest(attempt + 1)
+						end, 2000)
+					else
+						finish()
+					end
+				end
+			end, 10000)
+			if not jsonStarted and attempt >= 3 then
+				finish()
+			end
+		end)
+		return true
+	end
+
+	local query = city ~= "" and city or sponsor
+	if query == "" then
+		finish()
+		return
+	end
+
+	requestServerList(query, applyServer)
 end
 
 -- ── Speedtest run ────────────────────────────────────────────────────────
@@ -369,7 +941,6 @@ startTest = function()
 
 	errorMessage = nil
 	result = nil
-	clientInfo = nil
 	phase = ""
 	liveMbps = 0
 	gaugeMax = 100
@@ -377,6 +948,24 @@ startTest = function()
 	backendInUse = nil
 	progressValue = 0
 	simulatedMbps = 0
+	liveDownloadMbps = 0
+	liveUploadMbps = 0
+	livePingMs = nil
+	liveServerName = nil
+	liveServerLocation = nil
+	liveIsp = nil
+	liveExternalIp = nil
+	liveServerHost = nil
+	liveServerCountry = nil
+	liveServerIp = nil
+	liveServerId = nil
+	finishingResult = false
+	metadataReady = false
+	metadataInFlight = false
+	finalizingElapsed = 0
+	animatedDownloadMbps = 0
+	animatedUploadMbps = 0
+	testLogs = {}
 	timerRunning = true
 	state = "running"
 	panel.setNeedsFrameTick(true)
@@ -446,42 +1035,62 @@ runOoklaBackend = function()
 	end
 end
 
+
 runLegacyBackend = function()
-	-- No incremental progress from this tool, so pulse the gauge instead.
+	-- Keep the real speedtest-cli human-readable stream for live logs and
+	-- animation. The optional metadata preflight has already selected the server.
 	panel.setNeedsFrameTick(true)
-	local started = noctalia.runAsync(LEGACY_CMD, function(cmdResult)
-		panel.setNeedsFrameTick(false)
-		timerRunning = false
+	local cmd = "speedtest-cli --secure"
+	if liveServerId and liveServerId ~= "" then
+		cmd = cmd .. " --server " .. liveServerId
+	end
+	if noctalia.commandExists("stdbuf") then
+		cmd = "stdbuf -oL " .. cmd
+	end
 
-		if cmdResult.timedOut then
-			state = "error"
-			errorMessage = noctalia.tr("error_timeout")
+	local started = noctalia.runStream(cmd, function(line: string)
+		local trimmed = noctalia.string.trim(line)
+		if trimmed == "" then
+			return
+		end
+
+		addTestLog(trimmed)
+		parseLegacyLogLine(trimmed)
+
+		if string.find(string.lower(trimmed), "upload:", 1, true) then
+			result = {
+				downloadMbps = liveDownloadMbps,
+				uploadMbps = liveUploadMbps,
+				pingMs = livePingMs,
+				jitterMs = nil,
+				packetLoss = nil,
+				serverName = liveServerName,
+				serverHost = liveServerHost,
+				serverLocation = liveServerLocation,
+				serverCountry = liveServerCountry,
+				serverIp = liveServerIp,
+				isp = liveIsp,
+				externalIp = liveExternalIp,
+				resultUrl = nil,
+			}
+			lastDownloadMbps = result.downloadMbps or 0
+			lastUploadMbps = result.uploadMbps or 0
+			finishingResult = true
+			metadataReady = false
+			metadataInFlight = false
+			finalizingElapsed = 0
+			phase = "upload"
+			progressValue = 1.0
+			timerRunning = true
+			saveLastResult(result)
+			addHistory(result)
+			fetchLegacyServerMetadataAfterTest()
 			render()
 			return
 		end
 
-		if cmdResult.exitCode ~= 0 then
-			state = "error"
-			errorMessage = noctalia.tr("error_cli_reported")
-			render()
-			return
-		end
-
-		local data = noctalia.json.decode(cmdResult.stdout)
-		if not data then
-			state = "error"
-			errorMessage = noctalia.tr("error_cli_reported")
-			render()
-			return
-		end
-
-		result = normalizeLegacy(data)
-		state = "done"
-		saveLastResult(result)
-		addHistory(result)
-		fetchClientInfo()
 		render()
-	end, LEGACY_TIMEOUT_MS)
+	end)
 
 	if not started then
 		panel.setNeedsFrameTick(false)
@@ -492,12 +1101,14 @@ runLegacyBackend = function()
 	end
 end
 
+
 onSpeedtestLine = function(line: string)
 	local trimmed = noctalia.string.trim(line)
 	if trimmed == "" then
 		return
 	end
 
+	addTestLog(trimmed)
 	local data = noctalia.json.decode(trimmed)
 	if not data then
 		return -- ignore partial / malformed lines
@@ -520,14 +1131,17 @@ onSpeedtestLine = function(line: string)
 		progressValue = 0.80
 		render()
 	elseif t == "result" then
-		result = normalizeOokla(data)
+		local normalized = normalizeOokla(data)
+		liveServerHost = normalized.serverHost
+		liveServerCountry = normalized.serverCountry
+		liveServerIp = normalized.serverIp
+		result = normalized
 		state = "done"
 		phase = ""
 		progressValue = 1.0
 		timerRunning = false
 		saveLastResult(result)
 		addHistory(result)
-		fetchClientInfo()
 		render()
 	elseif t == "error" then
 		state = "error"
@@ -679,43 +1293,11 @@ renderIdle = function()
 end
 
 renderRunning = function()
-	-- O backend legacy usa a fase calculada pelo onFrameTick.
-	-- Isso garante que Download e Upload tenham simulações independentes.
-	if backendInUse == "legacy" then
-		local preparationSeconds = 3
-		local phaseSeconds = 8
-		local elapsed = math.max(0, runningElapsed - preparationSeconds)
-
-		if runningElapsed < preparationSeconds then
-			phase = "ping"
-			simulatedMbps = 0
-		else
-			local slot = math.floor(elapsed / phaseSeconds)
-			phase = (slot % 2 == 0) and "download" or "upload"
-
-			local phaseElapsed = elapsed % phaseSeconds
-			local baseSpeed
-
-			if phase == "download" then
-				baseSpeed = lastDownloadMbps
-				if not baseSpeed or baseSpeed <= 0 then
-					baseSpeed = 50
-				end
-			else
-				baseSpeed = lastUploadMbps
-				if not baseSpeed or baseSpeed <= 0 then
-					baseSpeed = 10
-				end
-			end
-
-			local wave = math.sin(phaseElapsed * 1.8) * 0.5 + 0.5
-			local variationRange = math.max(1.5, baseSpeed * 0.22)
-			simulatedMbps = math.max(0.5, baseSpeed + ((wave * 2 - 1) * variationRange))
-		end
+	if liveDownloadMbps > gaugeMax then
+		gaugeMax = math.max(50, math.ceil(liveDownloadMbps / 50) * 50)
 	end
-
-	if liveMbps > gaugeMax then
-		gaugeMax = math.max(50, math.ceil(liveMbps / 50) * 50)
+	if liveUploadMbps > gaugeMax then
+		gaugeMax = math.max(50, math.ceil(liveUploadMbps / 50) * 50)
 	end
 
 	local phaseKey = "phase_preparing"
@@ -725,137 +1307,60 @@ renderRunning = function()
 		phaseKey = "phase_download"
 	elseif phase == "upload" then
 		phaseKey = "phase_upload"
-	elseif backendInUse == "legacy" then
-		phaseKey = "phase_legacy_running"
 	end
 
-	local accent = phase == "upload" and "secondary" or "primary"
-	local soft = phase == "upload" and "secondary/0.10" or "primary/0.10"
-	
-	-- Determina qual valor de Mbps mostrar
-	local displayMbps = liveMbps
-	if backendInUse == "legacy" then
-		-- Usa o valor simulado para o backend legacy
-		displayMbps = simulatedMbps
-	end
-	local valueText = string.format("%.1f", displayMbps)
-
-	local progress = progressValue
-	if backendInUse == "legacy" then
-		local preparationSeconds = 3
-		local phaseSeconds = 8
-		local elapsed = math.max(0, runningElapsed - preparationSeconds)
-
-		if runningElapsed < preparationSeconds then
-			progress = math.min(0.15, runningElapsed / preparationSeconds * 0.15)
-		elseif phase == "download" then
-			local phaseElapsed = elapsed % phaseSeconds
-			progress = 0.15 + ((phaseElapsed / phaseSeconds) * 0.35)
-		else
-			local phaseElapsed = elapsed % phaseSeconds
-			progress = 0.50 + ((phaseElapsed / phaseSeconds) * 0.35)
-		end
-	end
-
+	local progress = math.max(0, math.min(1, progressValue))
 	local progressPercent = math.floor(progress * 100)
-	local filled = math.floor(progress * 30)
-	local progressBar = string.rep("█", filled) .. string.rep("░", 30 - filled)
+	local barWidth = 300
+	local filledWidth = math.floor(barWidth * progress)
 
 	local children = {
-		ui.column({ gap = 4, align = "center" }, {
-			ui.glyph({ name = "brand-speedtest", size = 30, color = "primary" }),
-			ui.label({ text = noctalia.tr("app_name"), fontSize = 20, fontWeight = "heavy", color = "on_surface" }),
-			ui.label({ text = noctalia.tr(phaseKey), fontSize = 12, color = "on_surface_variant", textAlign = "center" }),
+		ui.column({ gap = 3, align = "center" }, {
+			ui.row({ gap = 8, align = "center" }, {
+				ui.glyph({ name = "brand-speedtest", size = 24, color = "primary" }),
+				ui.label({ text = noctalia.tr("app_name"), fontSize = 19, fontWeight = "heavy", color = "on_surface" }),
+			}),
+			ui.label({ text = noctalia.tr(phaseKey), fontSize = 11, color = "on_surface_variant", textAlign = "center" }),
 		}),
-		fixedSpace(8),
-		-- Velocímetro da simulação: contorno ao redor do círculo e
-		-- ícone de Download/Upload dentro de um círculo acima do valor.
+		ui.row({ gap = 10, align = "center", justify = "center" }, {
+			liveMetricCircle("metric_download", animatedDownloadMbps, "primary", "primary/0.12", "arrow-down", phase == "download"),
+			liveMetricCircle("metric_upload", animatedUploadMbps, "secondary", "secondary/0.12", "arrow-up", phase == "upload"),
+		}),
+		renderLiveInfoCards(),
 		ui.column({
-			width = 250,
-			height = 250,
-			radius = 125,
-			fill = soft,
-			border = accent,
-			borderWidth = 3,
-			align = "center",
-			justify = "center",
 			gap = 5,
+			width = barWidth,
+			align = "stretch",
 		}, {
-			ui.column({
-				width = 50,
-				height = 50,
-				radius = 25,
-				fill = soft,
-				border = accent,
-				borderWidth = 2,
-				align = "center",
-				justify = "center",
+			ui.row({
+				width = barWidth,
+				height = 14,
+				radius = 7,
+				fill = "surface_variant",
 			}, {
-				ui.glyph({
-					name = phase == "upload" and "arrow-up" or "arrow-down",
-					size = 28,
-					color = accent,
+				ui.column({
+					width = math.max(1, filledWidth),
+					height = 14,
+					radius = 7,
+					fill = phase == "upload" and "secondary" or "primary",
 				}),
 			}),
-			ui.label({
-				text = valueText,
-				fontSize = 68,
-				fontWeight = "heavy",
-				color = "on_surface",
-			}),
-			ui.label({
-				text = noctalia.tr("unit_mbps"),
-				fontSize = 17,
-				fontWeight = "bold",
-				color = "on_surface_variant",
+			ui.row({ gap = 6, align = "center", justify = "space_between" }, {
+				ui.label({ text = string.format("%d%%", progressPercent), fontSize = 12, fontWeight = "bold", color = phase == "upload" and "secondary" or "primary" }),
+				ui.label({ text = string.format("%02d:%02d", math.floor(runningElapsed / 60), math.floor(runningElapsed) % 60), fontSize = 12, color = "on_surface_variant" }),
 			}),
 		}),
-		fixedSpace(6),
-		-- Cronômetro padronizado com o tema do Noctalia
-		ui.label({ 
-			text = string.format("%02d:%02d", math.floor(runningElapsed / 60), math.floor(runningElapsed) % 60), 
-			fontSize = 20, 
-			fontWeight = "bold", 
-			color = "on_surface"
-		}),
-		-- Barra de progresso em texto (garantida)
-		ui.column({
-			gap = 4,
-			align = "center",
-		}, {
-			ui.label({ 
-				text = progressBar, 
-				fontSize = 16, 
-				color = accent,
-				fontFamily = "monospace"
-			}),
-			ui.label({ 
-				text = string.format("%d%%", progressPercent), 
-				fontSize = 24,
-				fontWeight = "bold",
-				color = accent 
-			}),
-		}),
+		renderLiveLog(),
 	}
 
-	if backendInUse ~= "legacy" then
-		table.insert(children, ui.label({ text = noctalia.tr("gauge_scale", { max = gaugeMax }), fontSize = 10, color = "on_surface_variant" }))
-	end
-
-	if backendInUse == "ookla" and phase == "" and runningElapsed > 10 then
-		table.insert(children, fixedSpace(6))
-		table.insert(children, ui.label({ text = noctalia.tr("hint_stuck"), fontSize = 10, color = "on_surface_variant", textAlign = "center" }))
-	end
-
 	return ui.column({
-		gap = 10,
-		padding = 18,
+		gap = 9,
+		padding = 14,
 		fill = "surface/0.96",
 		radius = 18,
 		border = "outline",
 		borderWidth = 1,
 		align = "center",
-		justify = "center",
 		minHeight = 670,
 	}, children)
 end
@@ -865,14 +1370,24 @@ renderDone = function()
 	local children = {
 		titleBlock(),
 		ui.separator({ thickness = 1, color = "outline", spacing = 4 }),
-		ui.row({ gap = 10, align = "center" }, {
-			heroCircle("metric_download", "arrow-down", string.format("%.1f", r.downloadMbps or 0), "primary", "primary/0.12"),
-			heroCircle("metric_upload", "arrow-up", string.format("%.1f", r.uploadMbps or 0), "secondary", "secondary/0.12"),
+		ui.row({ gap = 10, align = "center", justify = "center" }, {
+			liveMetricCircle("metric_download", r.downloadMbps or 0, "primary", "primary/0.12", "arrow-down", true),
+			liveMetricCircle("metric_upload", r.uploadMbps or 0, "secondary", "secondary/0.12", "arrow-up", true),
 		}),
-		ui.row({ gap = 8, align = "stretch" }, {
-			smallStat("metric_ping", formatMetric(r.pingMs, "%.1f ms"), "clock", "tertiary"),
-			smallStat("metric_jitter", formatMetric(r.jitterMs, "%.1f ms"), "activity", "secondary"),
-			smallStat("metric_packet_loss", formatMetric(r.packetLoss, "%.1f%%"), "shield-check", "error"),
+		ui.row({
+			width = 312,
+			minWidth = 312,
+			maxWidth = 312,
+			height = 76,
+			minHeight = 76,
+			maxHeight = 76,
+			gap = 6,
+			align = "start",
+			justify = "start",
+		}, {
+			smallStat("metric_ping", formatMetric(r.pingMs, "%.1f ms"), "clock", "tertiary", 128, 76),
+			smallStat("metric_jitter", formatMetric(r.jitterMs, "%.1f ms"), "activity", "secondary", 128, 76),
+			smallStat("metric_packet_loss", formatMetric(r.packetLoss, "%.1f%%"), "shield-check", "error", 128, 76),
 		}),
 		fixedSpace(3),
 		sectionHeader("section_server", "server"),
@@ -887,12 +1402,6 @@ renderDone = function()
 		metricRow("metric_external_ip", tostring(r.externalIp or "-"), "world"),
 	}
 
-	if clientInfo then
-		table.insert(children, metricRow("metric_city", tostring(clientInfo.city or "-"), "map-pin"))
-		table.insert(children, metricRow("metric_region", tostring(clientInfo.region or "-"), "map"))
-		table.insert(children, metricRow("metric_country_ip", tostring(clientInfo.country_name or "-"), "flag"))
-		table.insert(children, metricRow("metric_org", tostring(clientInfo.org or "-"), "building"))
-	end
 
 	table.insert(children, fixedSpace(4))
 	table.insert(children, ui.column({ gap = 8, align = "center", paddingV = 2 }, {
@@ -944,6 +1453,7 @@ end
 
 function onOpen(context: any)
 	panelActive = true
+	loadIpApiCache()
 	if state == "idle" and result == nil then
 		loadLastResult()
 		loadHistory()
@@ -968,56 +1478,50 @@ function onFrameTick(deltaMs: number)
 	if state ~= "running" then
 		return
 	end
-	
-	-- Atualiza o tempo
+
 	runningElapsed = runningElapsed + (deltaMs / 1000)
-	
-	-- A simulação do legacy alterna independentemente entre Download e Upload.
-	-- O Download usa lastDownloadMbps e o Upload usa lastUploadMbps.
-	if backendInUse == "legacy" then
-		local preparationSeconds = 3
-		local phaseSeconds = 8
-		local elapsed = math.max(0, runningElapsed - preparationSeconds)
 
-		if runningElapsed < preparationSeconds then
-			phase = "ping"
-			progressValue = math.min(0.15, runningElapsed / preparationSeconds * 0.15)
-			simulatedMbps = 0
-		else
-			local slot = math.floor(elapsed / phaseSeconds)
-			phase = (slot % 2 == 0) and "download" or "upload"
+	local easing = math.min(1, (deltaMs / 1000) * 5)
+	local downloadTarget = liveDownloadMbps
+	local uploadTarget = liveUploadMbps
+	-- Legacy speedtest-cli only emits the final Download/Upload values. While
+	-- waiting for those lines, use a restrained pulse based on the previous
+	-- result so the gauge visibly remains active without replacing the final
+	-- measured value once it arrives.
+	if phase == "download" and liveDownloadMbps <= 0 then
+		local base = lastDownloadMbps > 0 and lastDownloadMbps or 10
+		downloadTarget = base * (0.18 + 0.10 * (0.5 + 0.5 * math.sin(runningElapsed * 8)))
+	elseif phase == "upload" and liveUploadMbps <= 0 then
+		local base = lastUploadMbps > 0 and lastUploadMbps or 3
+		uploadTarget = base * (0.18 + 0.10 * (0.5 + 0.5 * math.sin(runningElapsed * 8)))
+	end
+	animatedDownloadMbps = animatedDownloadMbps + (downloadTarget - animatedDownloadMbps) * easing
+	animatedUploadMbps = animatedUploadMbps + (uploadTarget - animatedUploadMbps) * easing
+	if liveDownloadMbps > 0 and math.abs(liveDownloadMbps - animatedDownloadMbps) < 0.01 then animatedDownloadMbps = liveDownloadMbps end
+	if liveUploadMbps > 0 and math.abs(liveUploadMbps - animatedUploadMbps) < 0.01 then animatedUploadMbps = liveUploadMbps end
 
-			local phaseElapsed = elapsed % phaseSeconds
-			local baseSpeed
-
-			if phase == "download" then
-				baseSpeed = lastDownloadMbps
-				if not baseSpeed or baseSpeed <= 0 then
-					baseSpeed = 50
-				end
-			else
-				baseSpeed = lastUploadMbps
-				if not baseSpeed or baseSpeed <= 0 then
-					baseSpeed = 10
-				end
-			end
-
-			local wave = math.sin(phaseElapsed * 1.8) * 0.5 + 0.5
-			local variationRange = math.max(1.5, baseSpeed * 0.22)
-			simulatedMbps = math.max(0.5, baseSpeed + ((wave * 2 - 1) * variationRange))
-
-			if phase == "download" then
-				progressValue = 0.15 + ((phaseElapsed / phaseSeconds) * 0.35)
-			else
-				progressValue = 0.50 + ((phaseElapsed / phaseSeconds) * 0.35)
-			end
-		end
-
-		if simulatedMbps > gaugeMax then
-			gaugeMax = math.max(50, math.ceil(simulatedMbps / 50) * 50)
+	if finishingResult and result then
+		finalizingElapsed = finalizingElapsed + (deltaMs / 1000)
+		local uploadSettled = math.abs((result.uploadMbps or 0) - animatedUploadMbps) < 0.05
+		-- Stay on the live Upload screen until the animation has visibly settled
+		-- AND metadata lookup has had a chance to populate the result cards.
+		-- A hard timeout prevents the panel from getting stuck forever if the
+		-- external metadata services are unavailable.
+		if uploadSettled and metadataReady and finalizingElapsed >= 1.25 then
+			finishingResult = false
+			state = "done"
+			phase = ""
+			timerRunning = false
+			animatedDownloadMbps = result.downloadMbps or animatedDownloadMbps
+			animatedUploadMbps = result.uploadMbps or animatedUploadMbps
+		elseif finalizingElapsed >= 10.0 then
+			finishingResult = false
+			state = "done"
+			phase = ""
+			timerRunning = false
+			animatedDownloadMbps = result.downloadMbps or animatedDownloadMbps
+			animatedUploadMbps = result.uploadMbps or animatedUploadMbps
 		end
 	end
-	
-	-- Sempre renderiza para atualizar o cronômetro e a barra de progresso
 	render()
 end
