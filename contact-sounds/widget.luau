@@ -10,12 +10,12 @@ local function render()
         return
     end
     barWidget.setVisible(true)
-    local glyphName = noctalia.getConfig("glyph") or "bell-ringing"
+    local glyphName = noctalia.getConfig("glyph") or "bell-cog"
     local children = {}
     if contactCount > 0 then
-        table.insert(children, ui.glyph({ name = glyphName, size = 14, color = "primary" }))
+        table.insert(children, ui.glyph({ name = glyphName, size = 18, color = "primary" }))
     else
-        table.insert(children, ui.glyph({ name = glyphName, size = 14, color = "on_surface" }))
+        table.insert(children, ui.glyph({ name = glyphName, size = 18, color = "on_surface" }))
     end
     local container = barWidget.isVertical() and ui.column or ui.row
     barWidget.render(container({ gap = 4, align = "center" }, children))
