@@ -31,4 +31,15 @@ the **[thumbnail generator](https://assets.noctalia.dev/plugins/thumbnail-genera
 your plugin, set the title, category tag and accent color, then export the 960×540 WebP and commit it as
 `<plugin>/thumbnail.webp`.
 
+### Tags
+
+The `tags` in `plugin.toml` are used for catalog search. Tags must be lowercase and selected from this list:
+
+- Surfaces: `bar`, `desktop`, `launcher`, `panel`, `service`, `shortcut`
+- Purpose: `ai`, `animation`, `audio`, `clock`, `countdown`, `demo`, `development`, `emoticon`, `fun`, `gaming`,
+  `hardware`, `indicator`, `language`, `media`, `music`, `network`, `privacy`, `productivity`, `recording`, `system`,
+  `theming`, `time`, `utility`, `video`, `wallpaper`
+- Compositors: `hyprland`, `labwc`, `mangowc`, `niri`, `sway`
+- Distributions: `arch`, `debian`, `fedora`, `gentoo`, `nixos`, `opensuse`, `void`
+
 > ⚡ Este repositório é automatizado. O `catalog.toml` é gerado automaticamente a partir dos `plugin.toml`.
