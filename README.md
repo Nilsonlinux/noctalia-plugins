@@ -14,6 +14,7 @@ Plugins Noctalia V5 (Unofficial)
 | RSS/Atom Notifier | `Monitors RSS/Atom feeds and notifies you when new items appear.` |
 | Inventory Manager | `Manages product inventory with categories and low-stock alerts.` |
 | Speedtest Meter | `Run an internet speed test with a live speedometer, then show full technical results: ping, jitter` |
+| Contact Notification Sounds | `Plays a unique sound (OGG/MP3) for notifications from people in your contact list.` |
 
 `https://github.com/Nilsonlinux/noctalia-plugins` 
 
