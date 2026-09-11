@@ -1,4 +1,4 @@
-# noctalia-plugins
+# Noctalia plugins
 Plugins Noctalia V5 (Unofficial)
 
 <p align="center">
