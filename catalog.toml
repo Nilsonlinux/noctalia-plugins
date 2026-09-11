@@ -25,7 +25,7 @@ tags = ["network", "indicator", "bar", "panel", "service"]
 plugin_api = 14
 version = "1.0.2"
 updated_at = 1788554504
-rev = "675d8c10934daeca57db6b781b6b4cd58285143e"
+rev = "8460fe48ba47dc686be96d15ec111988844a3530"
 
 [[plugin]]
 id = "nilsonlinux/rss-notifier"
@@ -44,7 +44,7 @@ tags = ["utility", "indicator", "panel", "bar", "service"]
 plugin_api = 14
 version = "1.0.4"
 updated_at = 1788554610
-rev = "675d8c10934daeca57db6b781b6b4cd58285143e"
+rev = "8460fe48ba47dc686be96d15ec111988844a3530"
 
 [[plugin]]
 id = "nilsonlinux/inventory-manager"
@@ -63,7 +63,13 @@ tags = ["utility", "productivity", "service", "panel", "bar"]
 plugin_api = 15
 version = "1.0.0"
 updated_at = 1788127260
-rev = "675d8c10934daeca57db6b781b6b4cd58285143e"
+rev = "8460fe48ba47dc686be96d15ec111988844a3530"
+
+[[plugin.release]]
+plugin_api = 14
+version = "1.0.1"
+updated_at = 1788559302
+rev = "e57c7091bca5a227c86bfd79335d4bc044d96489"
 
 [[plugin]]
 id = "nilsonlinux/speedtest-meter"
@@ -82,10 +88,29 @@ tags = ["network", "indicator", "bar", "panel"]
 plugin_api = 18
 version = "1.4.5"
 updated_at = 1789074333
-rev = "675d8c10934daeca57db6b781b6b4cd58285143e"
+rev = "8460fe48ba47dc686be96d15ec111988844a3530"
 
 [[plugin.release]]
 plugin_api = 14
 version = "1.0.0"
 updated_at = 1788730733
 rev = "5b2790880580a176b6a03ad36686a6005654cf74"
+
+[[plugin]]
+id = "nilsonlinux/contact-sounds"
+name = "Contact Notification Sounds"
+version = "1.0.0"
+updated_at = 1789160299
+added_at = 1789160299
+author = "Nilsonlinux"
+license = "MIT"
+icon = "bell-ringing"
+description = "Plays a unique sound (OGG/MP3) for notifications from people in your contact list."
+plugin_api = 20
+tags = ["utility", "notification", "audio", "service", "panel", "shortcut"]
+
+[[plugin.release]]
+plugin_api = 20
+version = "1.0.0"
+updated_at = 1789160299
+rev = "8460fe48ba47dc686be96d15ec111988844a3530"
