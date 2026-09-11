@@ -6,7 +6,7 @@ author      = "Nilsonlinux"
 license     = "MIT"
 icon        = "bell-ringing"
 description = "Plays a unique sound (OGG/MP3) for notifications from people in your contact list."
-tags        = ["utility", "notification", "audio", "service", "panel", "shortcut"]
+tags        = ["audio", "utility", "bar", "panel", "service"]
 dependencies = ["dbus-monitor", "gawk", "python3"]
 
 # ---------------------------------------------------------------------------
