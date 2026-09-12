@@ -25,7 +25,7 @@ tags = ["network", "indicator", "bar", "panel", "service"]
 plugin_api = 14
 version = "1.0.2"
 updated_at = 1788554504
-rev = "825dc047cebc3ab6f18311a9f8e60b5e6f56efe7"
+rev = "392c83a76912651e52b620bd270ad8e1c6ee29d4"
 
 [[plugin]]
 id = "nilsonlinux/rss-notifier"
@@ -44,7 +44,7 @@ tags = ["utility", "indicator", "panel", "bar", "service"]
 plugin_api = 14
 version = "1.0.4"
 updated_at = 1788554610
-rev = "825dc047cebc3ab6f18311a9f8e60b5e6f56efe7"
+rev = "392c83a76912651e52b620bd270ad8e1c6ee29d4"
 
 [[plugin]]
 id = "nilsonlinux/inventory-manager"
@@ -63,7 +63,7 @@ tags = ["utility", "productivity", "service", "panel", "bar"]
 plugin_api = 15
 version = "1.0.0"
 updated_at = 1788127260
-rev = "825dc047cebc3ab6f18311a9f8e60b5e6f56efe7"
+rev = "392c83a76912651e52b620bd270ad8e1c6ee29d4"
 
 [[plugin.release]]
 plugin_api = 14
@@ -88,7 +88,7 @@ tags = ["network", "indicator", "bar", "panel"]
 plugin_api = 18
 version = "1.4.5"
 updated_at = 1789074333
-rev = "825dc047cebc3ab6f18311a9f8e60b5e6f56efe7"
+rev = "392c83a76912651e52b620bd270ad8e1c6ee29d4"
 
 [[plugin.release]]
 plugin_api = 14
@@ -113,4 +113,4 @@ tags = ["audio", "utility", "bar", "panel", "service"]
 plugin_api = 20
 version = "1.0.0"
 updated_at = 1789160299
-rev = "825dc047cebc3ab6f18311a9f8e60b5e6f56efe7"
+rev = "392c83a76912651e52b620bd270ad8e1c6ee29d4"
