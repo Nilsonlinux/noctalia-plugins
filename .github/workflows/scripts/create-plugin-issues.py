@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Open a GitHub issue for each newly added plugin.
+"""Keep one GitHub issue per plugin in sync with its plugin.toml.
 
-Triggered by the same push-to-main workflow that rebuilds the catalog. Compares the
-before/after commits of the push to find `*/plugin.toml` files that were added, and
-opens one issue per new plugin directory, named after the directory itself.
+Triggered by the push-to-main workflow. For EVERY plugin directory it makes sure an
+open issue (named after the directory) reflects the current manifest: it creates one
+for brand-new plugins, and edits the existing open one whenever name/version/date/
+description change. Updates only happen when the body actually differs, so unrelated
+pushes are no-ops.
+
+The date shown right after the version is the commit date when that version string was
+first released (from plugin.toml history); it moves forward when the version bumps.
 """
 
 from __future__ import annotations
@@ -13,9 +18,12 @@ import os
 import subprocess
 import sys
 import tomllib
+from datetime import datetime
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
+
+MONTHS = ["", "jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 
 
 def git_output(*args: str) -> str:
@@ -24,22 +32,20 @@ def git_output(*args: str) -> str:
     ).stdout
 
 
-def added_plugin_dirs(before: str, after: str) -> list[str]:
-    """Directory names of every `plugin.toml` newly added between two commits."""
-    if not before or not after or before == "0" * 40:
-        # workflow_dispatch (no before/after) or first push of a new branch:
-        # nothing safe to diff against, so treat nothing as "new".
-        return []
+def gh(*args: str) -> str:
+    return subprocess.run(
+        ["gh", *args], capture_output=True, text=True, check=True
+    ).stdout
 
-    diff = git_output(
-        "diff", "--diff-filter=A", "--name-only", before, after, "--", "*/plugin.toml"
-    )
-    dirs = []
-    for line in diff.splitlines():
-        line = line.strip()
-        if line:
-            dirs.append(Path(line).parent.name)
-    return dirs
+
+def format_date(timestamp: int) -> str:
+    date = datetime.fromtimestamp(timestamp)
+    return f"{date.day:02d} {MONTHS[date.month]} {date.year}"
+
+
+def all_plugin_dirs() -> list[str]:
+    """Every directory containing a plugin.toml, sorted."""
+    return sorted(path.parent.name for path in ROOT_DIR.glob("*/plugin.toml"))
 
 
 def load_manifest(directory: str) -> dict:
@@ -48,73 +54,120 @@ def load_manifest(directory: str) -> dict:
         return tomllib.load(handle)
 
 
-def issue_already_exists(repo: str, title: str) -> bool:
-    """True if an issue with this exact title already exists, open or closed.
+def version_release_time(directory: str, version: str) -> int | None:
+    """Commit time (unix) of the first commit that shipped `version`.
 
-    Guards against duplicate issues if this job is ever re-run for the same push
-    (a manual re-run, for instance).
+    Walks plugin.toml history oldest-first; the earliest commit carrying the version
+    string is the bump that released it, matching update-catalog.py's `release_times`.
     """
-    result = subprocess.run(
-        [
-            "gh", "issue", "list",
-            "--repo", repo,
-            "--state", "all",
-            "--search", f'"{title}" in:title',
-            "--json", "title",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    titles = {item["title"] for item in json.loads(result.stdout)}
-    return title in titles
+    try:
+        revisions = git_output(
+            "log", "--format=%H %ct", "--", f"{directory}/plugin.toml"
+        ).splitlines()
+    except subprocess.CalledProcessError:
+        return None
+
+    for line in reversed(revisions):
+        revision, _, commit_time = line.partition(" ")
+        try:
+            manifest_at = tomllib.loads(
+                git_output("show", f"{revision}:{directory}/plugin.toml")
+            )
+        except (subprocess.CalledProcessError, tomllib.TOMLDecodeError):
+            continue
+        if manifest_at.get("version") == version:
+            return int(commit_time)
+    return None
 
 
-def create_issue(repo: str, directory: str, manifest: dict) -> None:
-    title = directory
+def plugin_timestamp(directory: str, version: str) -> int:
+    """Release date of the current version; falls back to the manifest's commit or mtime."""
+    release = version_release_time(directory, version)
+    if release is not None:
+        return release
+    try:
+        commit = git_output("log", "-1", "--format=%ct", "--", f"{directory}/plugin.toml").strip()
+        if commit:
+            return int(commit)
+    except (subprocess.CalledProcessError, ValueError):
+        pass
+    return int((ROOT_DIR / directory / "plugin.toml").stat().st_mtime)
+
+
+def issue_body(directory: str, manifest: dict) -> str:
     name = manifest.get("name", directory)
     description = (manifest.get("description") or "").strip()
-    version = manifest.get("version", "?")
+    version = str(manifest.get("version", "?"))
     author = manifest.get("author", "?")
+    date = format_date(plugin_timestamp(directory, version))
 
-    body = "\n".join(
+    return "\n".join(
         [
             f"**Plugin:** {name}",
             f"**Version:** {version}",
+            f"**Date:** {date}",
             f"**Author:** {author}",
             "",
             description or "_No description provided._",
         ]
     )
 
-    if issue_already_exists(repo, title):
-        print(f"Issue already exists for {title!r}, skipping.")
-        return
 
-    subprocess.run(
-        ["gh", "issue", "create", "--repo", repo, "--title", title, "--body", body],
-        check=True,
+def list_issues(repo: str) -> tuple[dict[str, dict], set[str]]:
+    """Open issues keyed by title, plus the set of every title (open or closed)."""
+    result = gh(
+        "issue", "list", "--repo", repo, "--state", "all",
+        "--limit", "500", "--json", "number,title,body,state",
     )
-    print(f"Created issue for {title!r}.")
+    issues = json.loads(result)
+    open_by_title = {
+        item["title"]: item for item in issues if item.get("state") == "OPEN"
+    }
+    all_titles = {item["title"] for item in issues}
+    return open_by_title, all_titles
+
+
+def sync_issue(
+    repo: str,
+    directory: str,
+    manifest: dict,
+    open_by_title: dict[str, dict],
+    all_titles: set[str],
+) -> str:
+    title = directory
+    body = issue_body(directory, manifest)
+
+    existing_open = open_by_title.get(title)
+    if existing_open is not None:
+        current_body = (existing_open.get("body") or "").strip()
+        if current_body == body:
+            return f"'{title}' is already up to date."
+        gh("issue", "edit", str(existing_open["number"]), "--repo", repo, "--body", body)
+        return f"Updated issue for '{title}' (body changed)."
+
+    if title in all_titles:
+        return f"Issue for '{title}' exists but is closed; leaving it untouched."
+
+    gh("issue", "create", "--repo", repo, "--title", title, "--body", body)
+    return f"Created issue for '{title}'."
 
 
 def main() -> int:
     repo = os.environ["GH_REPO"]
-    before = os.environ.get("BEFORE_SHA", "")
-    after = os.environ.get("AFTER_SHA", "")
 
-    dirs = added_plugin_dirs(before, after)
+    dirs = all_plugin_dirs()
     if not dirs:
-        print("No new plugins in this push.")
+        print("No plugin directories found; nothing to do.")
         return 0
 
+    open_by_title, all_titles = list_issues(repo)
     for directory in dirs:
         try:
             manifest = load_manifest(directory)
         except (OSError, tomllib.TOMLDecodeError) as error:
             print(f"warning: could not read plugin.toml for {directory}: {error}", file=sys.stderr)
             continue
-        create_issue(repo, directory, manifest)
+        print(sync_issue(repo, directory, manifest, open_by_title, all_titles))
 
     return 0
 
