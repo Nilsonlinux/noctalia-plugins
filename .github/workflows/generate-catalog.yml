@@ -50,6 +50,20 @@ jobs:
           git pull --rebase
           git push
 
+      # Ask nilsonlinux.github.io to regenerate plugin pages when the catalog
+      # actually changed. Requires a PAT (repo scope) stored as the
+      # PAGES_REPO_TOKEN secret in this repository's settings.
+      - name: Trigger page regeneration
+        if: steps.check_changes.outputs.changed == 'true'
+        env:
+          PAGES_REPO_TOKEN: ${{ secrets.PAGES_REPO_TOKEN }}
+        run: |
+          curl -sS -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $PAGES_REPO_TOKEN" \
+            -d '{"event_type": "sync-plugins"}' \
+            https://api.github.com/repos/Nilsonlinux/nilsonlinux.github.io/dispatches
+
   notify-new-plugins:
     runs-on: ubuntu-latest
     permissions:
