@@ -124,13 +124,13 @@ def issue_body(directory: str, manifest: dict) -> str:
 
     return "\n".join(
         [
+            f"![{name}]({thumb})",
+            "--------------",
             f"**Plugin:** {name}",
             f"**Version:** {version}",
             f"**Added:** {added}",
             f"**Last update:** {updated}",
             f"**Author:** {author}",
-            "--------------",
-            f"![{name}]({thumb})",
             "",
             description or "_No description provided._",
         ]
