@@ -9,6 +9,8 @@ pushes are no-ops.
 
 The date shown right after the version is the commit date when that version string was
 first released (from plugin.toml history); it moves forward when the version bumps.
+After the author line, a separator and the plugin thumbnail are always kept in sync
+so every issue shows the same image as the plugin page.
 """
 
 from __future__ import annotations
@@ -113,6 +115,12 @@ def issue_body(directory: str, manifest: dict) -> str:
     updated = format_date(plugin_timestamp(directory, version))
     added_ts = plugin_added_at(directory)
     added = format_date(added_ts) if added_ts is not None else updated
+    repo = os.environ.get("GH_REPO", "Nilsonlinux/noctalia-plugins")
+    owner, _, slug = repo.partition("/")
+    thumb = (
+        f"https://raw.githubusercontent.com/{owner or 'Nilsonlinux'}/"
+        f"{slug or 'noctalia-plugins'}/main/{directory}/thumbnail.webp"
+    )
 
     return "\n".join(
         [
@@ -121,6 +129,8 @@ def issue_body(directory: str, manifest: dict) -> str:
             f"**Added:** {added}",
             f"**Last update:** {updated}",
             f"**Author:** {author}",
+            "--------------",
+            f"![{name}]({thumb})",
             "",
             description or "_No description provided._",
         ]
