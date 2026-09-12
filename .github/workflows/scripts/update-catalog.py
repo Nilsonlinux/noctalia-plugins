@@ -148,6 +148,30 @@ def release_history(
         )
         lowest_api = plugin_api
 
+    # The very first version ever shipped must survive in the catalog even when
+    # it shares the tip's plugin_api (so the catalog/site can show when the
+    # plugin was created). The ladder above only records API-level steps, and
+    # its "newest at that level" row may be a later minor on the same API, not
+    # the real first release - so keep that one explicitly, unchanged. It has
+    # the oldest revision, so it never shadows the tip for install resolution.
+    for revision, _, manifest in reversed(history):  # oldest commit first
+        plugin_api = manifest.get("plugin_api")
+        version = manifest.get("version")
+        if not isinstance(version, str) or not version:
+            continue
+        if not isinstance(plugin_api, int) or isinstance(plugin_api, bool):
+            continue
+        if version != current_version and not any(r["version"] == version for r in releases):
+            releases.append(
+                {
+                    "plugin_api": plugin_api,
+                    "version": version,
+                    "rev": revision,
+                    "updated_at": released.get(version, get_current_timestamp()),
+                }
+            )
+        break  # only the FIRST revision matters here
+
     return releases
 
 
