@@ -94,18 +94,32 @@ def plugin_timestamp(directory: str, version: str) -> int:
     return int((ROOT_DIR / directory / "plugin.toml").stat().st_mtime)
 
 
+def plugin_added_at(directory: str) -> int | None:
+    """Commit time (unix) of the first commit that added plugin.toml, or None."""
+    try:
+        output = git_output(
+            "log", "-1", "--diff-filter=A", "--format=%ct", "--", f"{directory}/plugin.toml"
+        ).strip()
+        return int(output) if output else None
+    except (subprocess.CalledProcessError, ValueError):
+        return None
+
+
 def issue_body(directory: str, manifest: dict) -> str:
     name = manifest.get("name", directory)
     description = (manifest.get("description") or "").strip()
     version = str(manifest.get("version", "?"))
     author = manifest.get("author", "?")
-    date = format_date(plugin_timestamp(directory, version))
+    updated = format_date(plugin_timestamp(directory, version))
+    added_ts = plugin_added_at(directory)
+    added = format_date(added_ts) if added_ts is not None else updated
 
     return "\n".join(
         [
             f"**Plugin:** {name}",
             f"**Version:** {version}",
-            f"**Date:** {date}",
+            f"**Added:** {added}",
+            f"**Last update:** {updated}",
             f"**Author:** {author}",
             "",
             description or "_No description provided._",
