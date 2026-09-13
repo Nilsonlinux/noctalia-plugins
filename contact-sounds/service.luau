@@ -10,10 +10,18 @@
 --!nonstrict
 
 local SEP = string.char(0x1e)
+local FS = string.char(0x1f)
 
 local sounds = {}   -- [slug] = { loaded = bool, name = string, path = string }
 local pending = {}  -- queue of { name, path, slug } drained one per tick
 local loading = false
+
+-- Suppression-filter re-sync bookkeeping. requestFilterSync is assigned below
+-- (after the suppression helpers) and publishLoaded already needs it, so it is
+-- declared up here; by the time queueContacts() runs at the end of this module
+-- the assignment has happened.
+local filterDirty = false
+local requestFilterSync
 
 local function tr(key)
   return noctalia.tr(key)
@@ -40,6 +48,7 @@ local function publishLoaded()
   if ok and type(encoded) == "string" then
     noctalia.state.set("loaded", encoded)
   end
+  requestFilterSync()
 end
 
 -- Re-reads the contacts map into the pending queue (sorted, deterministic).
@@ -204,41 +213,95 @@ local function escapeRegex(s)
   return s:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
 end
 
--- Writes [notification.filter.contact-sounds] into the config home so the
--- shell's system notification sound is suppressed whenever a notification
--- mentions one of the configured contacts (this plugin plays the sound then).
--- No contacts -> filter disabled -> nothing is suppressed.
-local function syncSystemSoundFilter()
+-- Names currently present in the config whose sound is loaded. The filter must
+-- not list names that were deleted (their sound entry may still be warm) or
+-- whose load failed: the plugin would not play for them, and suppressing the
+-- system sound would leave those notifications silent.
+local function loadedContactNames()
   local contacts = noctalia.getConfig("contacts") or {}
-  local names = {}
-  for name, _ in pairs(contacts) do
-    local n = tostring(name)
-    if n ~= "" then
-      names[#names + 1] = n
+  local out = {}
+  for _, entry in pairs(sounds) do
+    if entry.loaded and contacts[entry.name] ~= nil then
+      out[#out + 1] = entry.name
     end
   end
+  table.sort(out)
+  return out
+end
 
-  local regex = ""
-  if #names > 0 then
-    table.sort(names)
-    local parts = {}
-    for _, n in ipairs(names) do
-      parts[#parts + 1] = escapeRegex(n)
-    end
-    regex = "(?:" .. table.concat(parts, "|") .. ")"
+local function buildContentRegex(names)
+  local parts = {}
+  for _, n in ipairs(names) do
+    parts[#parts + 1] = escapeRegex(n)
   end
+  if #parts == 0 then
+    return ""
+  end
+  return "(?:" .. table.concat(parts, "|") .. ")"
+end
+
+-- Keeps scripts/sync_filter.sh's `[notification.filter.contact-sounds-*]`
+-- rules aligned with what this plugin will actually play, so the system sound
+-- is suppressed only when a replacement sound is guaranteed:
+--   * matching must be case-insensitive (the system filter cannot mirror
+--     match_case_sensitive and would mute case-mismatched hits);
+--   * at least one contact sound must be loaded (no startup-silence window);
+--   * only loaded contacts are listed (failed loads are not suppressed);
+--   * with `only_apps`, each allowed app gets its own rule so an app outside
+--     the allow-list that merely mentions a contact is not muted, and with no
+--     app list, per-name `match` rules cover a contact that appears only in
+--     the app name (mirroring the plugin's own matching).
+-- Whenever the filter is disabled (`sync_filter.sh off`) the normal system
+-- sound stays on. The rule file is removed on disable/uninstall via onExit so
+-- it cannot keep muting the system sound after the service stops.
+local function syncSystemSoundFilter()
+  local sensitive = noctalia.getConfig("match_case_sensitive") == true
+  local apps = noctalia.getConfig("only_apps") or {}
+  local names = loadedContactNames()
 
   local dir = noctalia.pluginDir()
   if not dir then
     return
   end
   local script = dir .. "/scripts/sync_filter.sh"
-  noctalia.runAsync("bash " .. shellQuote(script) .. " " .. shellQuote(regex), function(result)
-    if result and result.exitCode ~= 0 then
-      noctalia.log("contact-sounds: sync_filter.sh failed: " .. tostring(result.stderr))
+
+  local function run(verb)
+    noctalia.runAsync("bash " .. shellQuote(script) .. " " .. verb, function(result)
+      if result and result.exitCode ~= 0 then
+        noctalia.log("contact-sounds: sync_filter.sh failed: " .. tostring(result.stderr))
+      end
+    end)
+    noctalia.runAsync("noctalia msg config-reload")
+  end
+
+  if sensitive or #names == 0 then
+    run("off")
+    return
+  end
+
+  local verb = "on " .. shellQuote(buildContentRegex(names))
+  if #apps > 0 then
+    local listed = {}
+    for _, app in ipairs(apps) do
+      local a = tostring(app)
+      if a ~= "" then
+        listed[#listed + 1] = a
+      end
     end
-  end)
-  noctalia.runAsync("noctalia msg config-reload")
+    if #listed > 0 then
+      verb = verb .. " --apps " .. shellQuote(table.concat(listed, FS))
+    end
+  else
+    verb = verb .. " --names " .. shellQuote(table.concat(names, FS))
+  end
+  run(verb)
+end
+
+-- The filter is re-synced from the load callbacks and config changes; the next
+-- update() tick applies the new rule set at most once per second instead of
+-- bursting a bash call per load completion.
+requestFilterSync = function()
+  filterDirty = true
 end
 
 -- ---------------------------------------------------------------------------
@@ -267,20 +330,18 @@ if not monitorStarted then
   noctalia.log("contact-sounds: could not start dbus-monitor stream")
 end
 
-local syncedOnce = false
-
 function update()
   noctalia.setUpdateInterval(1000)
-  if not syncedOnce then
-    syncedOnce = true
+  pumpLoads()
+  if filterDirty then
+    filterDirty = false
     syncSystemSoundFilter()
   end
-  pumpLoads()
 end
 
 function onConfigChanged()
   queueContacts() -- new/removed contacts reload; already-loaded slugs stay warm
-  syncSystemSoundFilter()
+  requestFilterSync()
 end
 
 function onIpc(_event, payload)
@@ -288,5 +349,22 @@ function onIpc(_event, payload)
     playNamed(payload)
   elseif _event == "reload" then
     queueContacts()
+  end
+end
+
+-- Removes the helper filter file when the plugin is disabled or uninstalled:
+-- with `enabled = true` and `play_sound = false` still on disk, the system
+-- notification sound would stay muted even though the service is no longer
+-- running to replace it.
+function onExit(_signal, reason)
+  if reason == "disable" or reason == "uninstall" then
+    local base = noctalia.getenv("NOCTALIA_CONFIG_HOME")
+    if not base or base == "" then
+      base = noctalia.getenv("XDG_CONFIG_HOME")
+      if not base or base == "" then
+        base = noctalia.expandPath("~/.config")
+      end
+    end
+    noctalia.removeFile(base .. "/noctalia/contact-sounds.toml")
   end
 end

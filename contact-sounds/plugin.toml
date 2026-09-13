@@ -1,6 +1,6 @@
 id          = "nilsonlinux/contact-sounds"
 name        = "Contact Notification Sounds"
-version     = "1.0.0"
+version     = "1.0.1"
 plugin_api  = 20
 author      = "Nilsonlinux"
 license     = "MIT"
@@ -86,4 +86,4 @@ entry = "widget.luau"
   type            = "glyph"
   label_key       = "settings.glyph.label"
   description_key = "settings.glyph.description"
-  default         = "bell-cog"
+  default         = "bell-ringing"

@@ -32,13 +32,17 @@ sound for the first contact matched.
   watches the `org.freedesktop.Notifications` session interface and forwards
   every `Notify()` call as `app \x1e title \x1e body`.
 - The service matches contact names in that text and plays the sound through
-  Noctalia's audio system (`noctalia.sound`), honoring its volume and DND state.
-- **Exclusive sound**: the service also keeps `~/.config/noctalia/contact-sounds.toml`
-  in sync with a `[notification.filter.contact-sounds]` rule
-  (`play_sound = false`) whose regex matches the configured contact names. This
-  silences Noctalia's system notification sound for exactly those messages, so
-  only the contact's OGG plays. Notifications that mention nobody keep their
-  normal system sound.
+  Noctalia's audio system (`noctalia.sound`) at the configured volume; plugin
+  sounds are not silenced by Do Not Disturb.
+- **Exclusive sound**: the service keeps `~/.config/noctalia/contact-sounds.toml`
+  in sync with `[notification.filter.contact-sounds-*]` rules that set
+  `play_sound = false`, so Noctalia's system notification sound is suppressed
+  exactly when the plugin will play a contact's OGG. The rules only cover
+  contact sounds that loaded, are disabled while case-sensitive matching is on
+  (system filters are always case-insensitive), and become one rule per allowed
+  app when `only_apps` is set. The file is removed when the plugin is disabled
+  or uninstalled, so the system sound can never be left muted. Notifications
+  that match nothing keep their normal system sound.
 - `panel.luau` reads the same config to list contacts and test sounds.
 - `shortcut.luau` adds a control-center tile that opens the panel.
 
@@ -82,6 +86,12 @@ Notification text and panel labels come from `translations/<locale>.json`
 (English and `pt-BR` included). The panel's **Add/Delete** controls edit the
 same `contacts` map (via `scripts/edit_contacts.sh`, which writes Noctalia's
 `settings.toml`).
+
+`~/.config/noctalia/contact-sounds.toml` is managed by the plugin and should not
+be edited by hand. Matching is always case-insensitive for the exclusive-sound
+suppression; with `only_apps` set, a contact must appear in the notification
+summary or body (a name that only shows up in the app name is covered only when
+no app allow-list is configured).
 
 Sound files are played at the [Noctalia](https://noctalia.dev) audio volume.
 
