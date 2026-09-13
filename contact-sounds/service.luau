@@ -3,6 +3,14 @@
 -- notification whose app_name/summary/body contains one of the configured
 -- contact names, plays that contact's assigned OGG sound.
 --
+-- Contacts can be a single sound file or a folder of sounds:
+--   * file   -> the sound is loaded and played as-is.
+--   * folder -> folder_sounds["<name>"] picks one file; when empty a random
+--               member plays, so a folder means "any of these sounds".
+-- Every contact also has a kind (contact|group|app): "app" entries match the
+-- notification's app name only, the others match summary/body/app-name like
+-- before. contact_images only matters to the panel.
+--
 -- The sounds live in this runtime's sound bank (API 20). Contacts are loaded
 -- one per update() tick so we stay under the 8-pending-loads cap, and the
 -- "loaded" map is published to noctalia.state for the panel to render.
@@ -11,6 +19,8 @@
 
 local SEP = string.char(0x1e)
 local FS = string.char(0x1f)
+
+local SOUND_EXTS = { ogg = true, mp3 = true, wav = true }
 
 local sounds = {}   -- [slug] = { loaded = bool, name = string, path = string }
 local pending = {}  -- queue of { name, path, slug } drained one per tick
@@ -43,21 +53,128 @@ local function slug(name)
   return "contact_" .. s
 end
 
+-- ---------------------------------------------------------------------------
+-- Config + sound resolution
+-- ---------------------------------------------------------------------------
+
+local function cfgMap(key)
+  local v = noctalia.getConfig(key) or {}
+  local out = {}
+  for k, val in pairs(v) do
+    out[tostring(k)] = tostring(val)
+  end
+  return out
+end
+
+local function expandPath(p)
+  if p:sub(1, 1) == "~" then
+    return noctalia.expandPath(p)
+  end
+  return p
+end
+
+local function fileExt(p)
+  local ext = p:match("%.([^./]+)$")
+  return ext and ext:lower() or ""
+end
+
+local function listSounds(dir)
+  local out = {}
+  local names = noctalia.listDir(dir)
+  if names then
+    for _, n in ipairs(names) do
+      if SOUND_EXTS[fileExt(n)] then
+        out[#out + 1] = n
+      end
+    end
+  end
+  table.sort(out)
+  return out
+end
+
+-- The sound file that should play for `name` right now. A folder entry
+-- resolves to the chosen sound (folder_sounds), or a random member so a
+-- folder means "any of these sounds".
+local function resolveSoundFile(name)
+  local contacts = noctalia.getConfig("contacts") or {}
+  local raw = contacts[name]
+  if not raw then
+    return nil
+  end
+  local p = expandPath(tostring(raw))
+  local info = noctalia.fileInfo(p)
+  if info and info.isDir then
+    local files = listSounds(p)
+    if #files == 0 then
+      return nil
+    end
+    local chosen = cfgMap("folder_sounds")[name]
+    if chosen and chosen ~= "" then
+      for _, f in ipairs(files) do
+        if f == chosen then
+          return p .. "/" .. f
+        end
+      end
+    end
+    return p .. "/" .. files[math.random(#files)]
+  end
+  return p
+end
+
+-- ---------------------------------------------------------------------------
+-- Publishing loaded state
+-- ---------------------------------------------------------------------------
+
+-- Publishes every contact so the panel always has a row: warm/loaded entries
+-- come from `sounds`, everything else is a not-loaded placeholder (the panel
+-- turns that into its spinner/error glyph instead of dropping the row).
 local function publishLoaded()
-  local ok, encoded = pcall(noctalia.json.encode, sounds)
+  local contacts = noctalia.getConfig("contacts") or {}
+  local merged = {}
+  for s, entry in pairs(sounds) do
+    if contacts[entry.name] ~= nil then
+      merged[s] = entry
+    end
+  end
+  for name, rawPath in pairs(contacts) do
+    local n = tostring(name)
+    if n ~= "" then
+      local s = slug(n)
+      if not merged[s] then
+        merged[s] = { loaded = false, name = n, path = tostring(rawPath) }
+      end
+    end
+  end
+  local ok, encoded = pcall(noctalia.json.encode, merged)
   if ok and type(encoded) == "string" then
     noctalia.state.set("loaded", encoded)
   end
   requestFilterSync()
 end
 
--- Re-reads the contacts map into the pending queue (sorted, deterministic).
+-- Re-reads the contacts map into the pending queue (sorted, deterministic)
+-- and drops warm entries that stopped resolving (deleted or empty folder).
 local function queueContacts()
   pending = {}
-  for name, path in pairs(noctalia.getConfig("contacts") or {}) do
-    local n, p = tostring(name), tostring(path)
-    if n ~= "" and noctalia.string.trim(p) ~= "" then
-      table.insert(pending, { name = n, path = p, slug = slug(n) })
+  local contacts = noctalia.getConfig("contacts") or {}
+  local resolvable = {}
+  for name, rawPath in pairs(contacts) do
+    local n = tostring(name)
+    if n ~= "" and noctalia.string.trim(tostring(rawPath)) ~= "" then
+      local s = slug(n)
+      local resolved = resolveSoundFile(n)
+      if resolved then
+        resolvable[s] = true
+        local entry = sounds[s]
+        if not (entry and entry.loaded and entry.path == resolved) then
+          table.insert(pending, { name = n, path = resolved, slug = s })
+        end
+      end
+    end
+  end
+  for s in pairs(sounds) do
+    if not resolvable[s] then
+      sounds[s] = nil
     end
   end
   table.sort(pending, function(a, b)
@@ -94,12 +211,16 @@ local function pumpLoads()
   end
 end
 
--- Loads a sound on demand (used by the panel "play" flow, and to re-test after
--- a failed load). startBusy is a function()/nil guard set by callers.
+-- Loads a sound on demand and plays it once ready. Re-loads the slug whenever
+-- the resolved file differs from what is warm, so a folder contact always
+-- plays its currently-selected (or fresh random) file. startBusy/finishBusy
+-- are function()/nil guards set by callers.
 local function playNamed(name, startBusy, finishBusy)
-  local contacts = noctalia.getConfig("contacts") or {}
-  local path = contacts[name]
-  if not path then
+  local resolved = resolveSoundFile(name)
+  if not resolved then
+    if finishBusy then
+      finishBusy()
+    end
     return
   end
   local s = slug(name)
@@ -114,7 +235,7 @@ local function playNamed(name, startBusy, finishBusy)
     end
   end
 
-  if entry and entry.loaded then
+  if entry and entry.loaded and entry.path == resolved then
     fire(true)
     return
   end
@@ -122,11 +243,11 @@ local function playNamed(name, startBusy, finishBusy)
   if startBusy then
     startBusy()
   end
-  local accepted = noctalia.sound.load(s, path, function(ok, err)
-    sounds[s] = { loaded = ok, name = name, path = path }
+  local accepted = noctalia.sound.load(s, resolved, function(ok, err)
+    sounds[s] = { loaded = ok, name = name, path = resolved }
     publishLoaded()
     if not ok then
-      noctalia.log(string.format("contact-sounds: failed to load %s (%s): %s", s, path, tostring(err)))
+      noctalia.log(string.format("contact-sounds: failed to load %s (%s): %s", s, resolved, tostring(err)))
     end
     fire(ok)
   end)
@@ -146,16 +267,29 @@ local function lower(s)
   return s:lower()
 end
 
-local function matchContact(text)
+-- "app" contacts match the notification's app name only (they exist for
+-- "this app made a sound"), while contacts/groups match summary + body + app
+-- name like before.
+local function matchContact(appName, title, body)
   local contacts = noctalia.getConfig("contacts") or {}
+  local kinds = noctalia.getConfig("contact_kinds") or {}
   local sensitive = noctalia.getConfig("match_case_sensitive") == true
-  local hay = sensitive and text or lower(text)
 
   for name, _ in pairs(contacts) do
     local n = tostring(name)
     local needle = sensitive and n or lower(n)
-    if needle ~= "" and hay:find(needle, 1, true) then
-      return n
+    if needle ~= "" then
+      local kind = kinds[n] or "contact"
+      local hay
+      if kind == "app" then
+        hay = appName
+      else
+        hay = title .. " " .. body .. " " .. appName
+      end
+      local search = sensitive and hay or lower(hay)
+      if search:find(needle, 1, true) then
+        return n
+      end
     end
   end
 end
@@ -189,18 +323,45 @@ local function handleLine(line)
     return
   end
 
-  local contact = matchContact(title .. " " .. body .. " " .. appName)
+  local contact = matchContact(appName, title, body)
   if not contact then
     return
   end
 
+  local resolved = resolveSoundFile(contact)
+  if not resolved then
+    return
+  end
   local s = slug(contact)
   local entry = sounds[s]
-  if entry and entry.loaded then
+
+  local function played()
     noctalia.log("contact-sounds: playing " .. contact .. " (from " .. appName .. ")")
     noctalia.sound.play(s)
     noctalia.state.set("last_hit", contact)
     noctalia.state.set("last_hit_at", noctalia.nowMs() / 1000)
+  end
+
+  if entry and entry.loaded and entry.path == resolved then
+    played()
+    return
+  end
+
+  -- Folder contacts resolve to a (possibly random) file per hit: load that
+  -- file into the same slug, then play. A name already pending here is rare
+  -- (one in-flight hit); the queue drains it one tick later.
+  local accepted = noctalia.sound.load(s, resolved, function(ok, err)
+    sounds[s] = { loaded = ok, name = contact, path = resolved }
+    publishLoaded()
+    if not ok then
+      noctalia.log(string.format("contact-sounds: failed to load %s (%s): %s", s, resolved, tostring(err)))
+      return
+    end
+    played()
+  end)
+  if not accepted then
+    noctalia.log("contact-sounds: hit while " .. s .. " was already loading; retrying next tick")
+    table.insert(pending, { name = contact, path = resolved, slug = s })
   end
 end
 
@@ -208,15 +369,10 @@ end
 -- System sound suppression
 -- ---------------------------------------------------------------------------
 
--- Escapes a literal contact name so it can be used inside a regex.
 local function escapeRegex(s)
   return s:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
 end
 
--- Names currently present in the config whose sound is loaded. The filter must
--- not list names that were deleted (their sound entry may still be warm) or
--- whose load failed: the plugin would not play for them, and suppressing the
--- system sound would leave those notifications silent.
 local function loadedContactNames()
   local contacts = noctalia.getConfig("contacts") or {}
   local out = {}
@@ -240,20 +396,6 @@ local function buildContentRegex(names)
   return "(?:" .. table.concat(parts, "|") .. ")"
 end
 
--- Keeps scripts/sync_filter.sh's `[notification.filter.contact-sounds-*]`
--- rules aligned with what this plugin will actually play, so the system sound
--- is suppressed only when a replacement sound is guaranteed:
---   * matching must be case-insensitive (the system filter cannot mirror
---     match_case_sensitive and would mute case-mismatched hits);
---   * at least one contact sound must be loaded (no startup-silence window);
---   * only loaded contacts are listed (failed loads are not suppressed);
---   * with `only_apps`, each allowed app gets its own rule so an app outside
---     the allow-list that merely mentions a contact is not muted, and with no
---     app list, per-name `match` rules cover a contact that appears only in
---     the app name (mirroring the plugin's own matching).
--- Whenever the filter is disabled (`sync_filter.sh off`) the normal system
--- sound stays on. The rule file is removed on disable/uninstall via onExit so
--- it cannot keep muting the system sound after the service stops.
 local function syncSystemSoundFilter()
   local sensitive = noctalia.getConfig("match_case_sensitive") == true
   local apps = noctalia.getConfig("only_apps") or {}
@@ -297,9 +439,6 @@ local function syncSystemSoundFilter()
   run(verb)
 end
 
--- The filter is re-synced from the load callbacks and config changes; the next
--- update() tick applies the new rule set at most once per second instead of
--- bursting a bash call per load completion.
 requestFilterSync = function()
   filterDirty = true
 end
@@ -314,7 +453,6 @@ local function startMonitor()
     return false
   end
   local script = dir .. "/scripts/monitor.sh"
-  -- make sure it is executable (fresh installs may not preserve the bit)
   noctalia.runAsync("chmod +x " .. shellQuote(script))
 
   return noctalia.runStream(shellQuote(script), handleLine)
@@ -340,7 +478,7 @@ function update()
 end
 
 function onConfigChanged()
-  queueContacts() -- new/removed contacts reload; already-loaded slugs stay warm
+  queueContacts()
   requestFilterSync()
 end
 
@@ -352,10 +490,7 @@ function onIpc(_event, payload)
   end
 end
 
--- Removes the helper filter file when the plugin is disabled or uninstalled:
--- with `enabled = true` and `play_sound = false` still on disk, the system
--- notification sound would stay muted even though the service is no longer
--- running to replace it.
+-- Removes the helper filter file when the plugin is disabled or uninstalled.
 function onExit(_signal, reason)
   if reason == "disable" or reason == "uninstall" then
     local base = noctalia.getenv("NOCTALIA_CONFIG_HOME")
