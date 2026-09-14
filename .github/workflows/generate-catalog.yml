@@ -33,20 +33,20 @@ jobs:
       - name: Check for changes
         id: check_changes
         run: |
-          git add catalog.toml
-          if git diff --cached --quiet catalog.toml; then
+          git add catalog.toml README.md
+          if git diff --cached --quiet catalog.toml README.md; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No changes to catalog.toml"
+            echo "No changes to catalog.toml or README.md"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Changes detected in catalog.toml"
+            echo "Changes detected in catalog.toml or README.md"
           fi
       - name: Commit and push changes
         if: steps.check_changes.outputs.changed == 'true'
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git commit -m "chore: update plugin catalog [skip ci]"
+          git commit -m "chore: update plugin catalog and README [skip ci]"
           git pull --rebase
           git push
 

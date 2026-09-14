@@ -347,10 +347,52 @@ def render_catalog(plugins: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def update_readme(plugins: list[dict]) -> bool:
+    """Refresh the `## Plugins` table in README.md from the current plugin manifests."""
+    readme = ROOT_DIR / "README.md"
+    if not readme.exists():
+        return False
+
+    original = readme.read_text(encoding="utf-8")
+    lines = original.splitlines()
+
+    table_start = None
+    for i, line in enumerate(lines):
+        if line.strip() == "## Plugins":
+            for j in range(i + 1, len(lines)):
+                if lines[j].strip() == "| Plugin | Description |":
+                    table_start = j
+                    break
+            break
+    if table_start is None:
+        print("WARNING: could not find the '## Plugins' table in README.md; leaving it untouched")
+        return False
+
+    table_end = table_start
+    while table_end < len(lines) and lines[table_end].strip() != "":
+        table_end += 1
+
+    def cell(value: str) -> str:
+        return value.replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
+
+    rows = ["| Plugin | Description |", "| --- | --- |"]
+    for plugin in plugins:
+        rows.append(f"| {cell(plugin.get('name', ''))} | `{cell(plugin.get('description', ''))}` |")
+
+    lines[table_start:table_end] = rows
+    text = "\n".join(lines)
+    if original.endswith("\n") and not text.endswith("\n"):
+        text += "\n"
+    readme.write_text(text, encoding="utf-8")
+    print(f"Updated {readme.relative_to(ROOT_DIR)} with {len(rows) - 2} plugin row(s).")
+    return True
+
+
 def main() -> int:
     try:
         plugins = discover_plugins()
         CATALOG_PATH.write_text(render_catalog(plugins), encoding="utf-8")
+        update_readme(plugins)
         print(f"Updated {CATALOG_PATH.relative_to(ROOT_DIR)} with {len(plugins)} plugin(s).")
         
         # Print summary of plugin versions

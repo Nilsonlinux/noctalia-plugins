@@ -12,9 +12,10 @@ Plugins Noctalia V5 (Unofficial)
 | --- | --- |
 | Link/IP Monitor | `It pings a list of IPs, hosts, or links at intervals and notifies you when one goes down (or comes back up).` |
 | RSS/Atom Notifier | `Monitors RSS/Atom feeds and notifies you when new items appear.` |
-| Inventory Manager | `Manages product inventory with categories and low-stock alerts.` |
-| Speedtest Meter | `Run an internet speed test with a live speedometer, then show full technical results: ping, jitter` |
+| Inventory Manager | `Inventory Manager for managing product inventory with categories, low stock alerts, and data export.` |
+| Speedtest Meter | `Run an internet speed test with a live speedometer and detailed results.` |
 | Contact Notification Sounds | `Plays a unique sound (OGG/MP3) for notifications from people in your contact list.` |
+| World Radio | `Browse thousands of radio stations from around the world with country flags, play them from a dashboard panel.` |
 
 `https://github.com/Nilsonlinux/noctalia-plugins` 
 
