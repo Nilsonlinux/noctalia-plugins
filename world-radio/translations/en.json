@@ -17,6 +17,8 @@
     "favorites_count": "{count} saved",
     "favorites_empty": "No favorites yet. Tap the star on any station.",
     "favorites_title": "Favorites",
+    "genre_stations": "Stations by genre",
+    "genres_title": "Genres",
     "load_more": "Load more",
     "loading": "Loading...",
     "play_tooltip": "Play",
@@ -24,13 +26,20 @@
     "search_countries_placeholder": "Search countries...",
     "search_stations_placeholder": "Search stations by name...",
     "station_count": "{count} stations",
-    "stations_empty": "No stations found for this country",
+    "stations_empty": "No stations found",
     "stations_none_match": "No station matches your search",
     "stop_tooltip": "Stop",
     "title": "World Radio",
     "total_countries": "Countries",
     "total_stations": "Total stations",
-    "unfavorite_tooltip": "Unfavorite"
+    "unfavorite_tooltip": "Unfavorite",
+    "top_countries": "Top countries",
+    "all_countries": "All countries ({count})",
+    "search_title": "Search radios",
+    "search_subtitle": "All countries",
+    "search_global_placeholder": "Search station name or keyword...",
+    "search_hint": "Type at least 2 characters to search across all countries",
+    "search_no_results": "No stations found for this search"
   },
   "settings": {
     "glyph": {

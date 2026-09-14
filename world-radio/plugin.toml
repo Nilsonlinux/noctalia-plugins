@@ -6,7 +6,7 @@ author      = "Nilsonlinux"
 license     = "MIT"
 icon        = "radio"
 description = "Browse thousands of radio stations from around the world with country flags, play them from a dashboard panel."
-tags        = ["music", "radio", "utility", "panel", "bar"]
+tags        = ["media", "utility", "music", "panel", "bar"]
 dependencies = ["mpv"]
 
 # ---------------------------------------------------------------------------

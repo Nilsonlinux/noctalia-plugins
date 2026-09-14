@@ -1,11 +1,37 @@
 -- panel.luau
--- World Radio: dashboard of countries with flags and station counts, a per-country
--- station list, and local playback through mpv (falls back to ffplay).
+-- World Radio: dashboard of countries, genres, station lists, favorites,
+-- and local playback through mpv (falls back to ffplay).
 
 local COUNTRIES_CACHE_AGE = 4 * 3600
 local STATIONS_PAGE = 100
+local TOP_COUNTRIES = 12
+local SEARCH_DEBOUNCE_MS = 350
+local FAV_ANIM_MS = 500
 local API_BASE = "https://de1.api.radio-browser.info"
 local USER_AGENT = "nilsonlinux/world-radio/1.0.0"
+
+local GENRES = {
+  { name = "Rock",      icon = "guitar-pick", tag = "rock" },
+  { name = "Pop",       icon = "star",        tag = "pop" },
+  { name = "Jazz",      icon = "music",       tag = "jazz" },
+  { name = "Classical", icon = "piano",       tag = "classical" },
+  { name = "Electronic",icon = "disc",        tag = "electronic" },
+  { name = "News",      icon = "news",        tag = "news" },
+  { name = "Hip Hop",   icon = "microphone",  tag = "hiphop" },
+  { name = "R&B",       icon = "headphones",  tag = "rnb" },
+  { name = "Country",   icon = "flag",        tag = "country" },
+  { name = "Folk",      icon = "leaf",        tag = "folk" },
+  { name = "Reggae",    icon = "sunset",      tag = "reggae" },
+  { name = "Metal",     icon = "flame",       tag = "metal" },
+  { name = "Blues",     icon = "cloud-rain",  tag = "blues" },
+  { name = "Punk",      icon = "bolt",        tag = "punk" },
+  { name = "Latin",     icon = "sun",         tag = "latin" },
+  { name = "Ambient",   icon = "cloud",       tag = "ambient" },
+  { name = "Talk",      icon = "message-circle", tag = "talk" },
+  { name = "Sports",    icon = "activity",    tag = "sports" },
+  { name = "Dance",     icon = "music-bolt",  tag = "dance" },
+  { name = "Alternative", icon = "refresh",   tag = "alternative" },
+}
 
 local dataDir
 local function getDataDir()
@@ -35,6 +61,26 @@ local stationsOffset = 0
 local stationsDone = false
 local stationsErr = false
 
+local genreStations = nil
+local genreOffset = 0
+local genreDone = false
+local genreErr = false
+local genreQuery = ""
+local genreQueryKey = 0
+local selectedGenre = nil
+local genreLoading = false
+
+local countriesExpanded = false
+
+local globalSearch = ""
+local globalSearchKey = 0
+local globalResults = nil
+local globalOffset = 0
+local globalDone = false
+local globalErr = false
+local globalLoading = false
+local globalSearchNonce = 0
+
 local loading = false
 local errorMessage = ""
 
@@ -48,12 +94,19 @@ local customStations = {}
 local customFormName = ""
 local customFormUrl = ""
 
+local hoveredKey = nil
+local favAnimUuid = nil
+local favAnimStart = 0
+
 local render
 local renderDashboard
 local renderCountry
+local renderGenre
 local renderFavorites
 local renderCustom
 local renderAddCustom
+local renderMiniPlayer
+local renderGlobalSearch
 
 local function tr(key, subst)
   if subst == nil then
@@ -135,6 +188,15 @@ local function httpJson(url, cb)
       cb(nil)
     end
   end)
+end
+
+local function genreTag(name)
+  for _, g in ipairs(GENRES) do
+    if g.name == name then
+      return g.tag
+    end
+  end
+  return nil
 end
 
 local function fetchStats()
@@ -223,6 +285,86 @@ local function fetchStations(offset)
   end)
 end
 
+local function fetchGenreStations(offset)
+  genreLoading = true
+  errorMessage = ""
+  render()
+  local tag = selectedGenre and selectedGenre.tag or ""
+  local url = string.format(
+    "%s/json/stations/search?tag=%s&order=votes&reverse=true&hidebroken=true&limit=%d&offset=%d",
+    API_BASE, noctalia.string.urlEncode(tag), STATIONS_PAGE, offset
+  )
+  httpJson(url, function(data)
+    genreLoading = false
+    if data == nil then
+      if genreStations == nil then
+        genreErr = true
+      end
+      render()
+      return
+    end
+    genreStations = genreStations or {}
+    for _, s in ipairs(data) do
+      local playUrl = (s.url_resolved ~= nil and s.url_resolved ~= "") and s.url_resolved or (s.url or "")
+      local name = tostring(s.name or "")
+      if name ~= "" and playUrl ~= "" then
+        table.insert(genreStations, {
+          uuid = tostring(s.stationuuid or ("gs" .. tostring(#genreStations + 1))),
+          name = name,
+          url = playUrl,
+          favicon = tostring(s.favicon or ""),
+          codec = tostring(s.codec or ""),
+          bitrate = tonumber(s.bitrate) or 0,
+          votes = tonumber(s.votes) or 0,
+        })
+      end
+    end
+    genreOffset = offset + #data
+    genreDone = #data < STATIONS_PAGE
+    render()
+  end)
+end
+
+local function fetchGlobalSearch(offset)
+  globalLoading = true
+  globalErr = false
+  render()
+  local q = noctalia.string.trim(globalSearch)
+  local url = string.format(
+    "%s/json/stations/search?name=%s&order=votes&reverse=true&hidebroken=true&limit=%d&offset=%d",
+    API_BASE, noctalia.string.urlEncode(q), STATIONS_PAGE, offset
+  )
+  httpJson(url, function(data)
+    globalLoading = false
+    if data == nil then
+      if globalResults == nil then
+        globalErr = true
+      end
+      render()
+      return
+    end
+    globalResults = globalResults or {}
+    for _, s in ipairs(data) do
+      local playUrl = (s.url_resolved ~= nil and s.url_resolved ~= "") and s.url_resolved or (s.url or "")
+      local name = tostring(s.name or "")
+      if name ~= "" and playUrl ~= "" then
+        table.insert(globalResults, {
+          uuid = tostring(s.stationuuid or ("gsr" .. tostring(#globalResults + 1))),
+          name = name,
+          url = playUrl,
+          favicon = tostring(s.favicon or ""),
+          codec = tostring(s.codec or ""),
+          bitrate = tonumber(s.bitrate) or 0,
+          votes = tonumber(s.votes) or 0,
+        })
+      end
+    end
+    globalOffset = offset + #data
+    globalDone = #data < STATIONS_PAGE
+    render()
+  end)
+end
+
 local function selectCountry(code, name)
   view = "country"
   selectedCode = code
@@ -235,8 +377,25 @@ local function selectCountry(code, name)
   stationQueryKey = stationQueryKey + 1
   loading = false
   errorMessage = ""
+  hoveredKey = nil
   render()
   fetchStations(0)
+end
+
+local function selectGenre(genre)
+  view = "genre"
+  selectedGenre = genre
+  genreStations = nil
+  genreOffset = 0
+  genreDone = false
+  genreErr = false
+  genreQuery = ""
+  genreQueryKey = genreQueryKey + 1
+  genreLoading = false
+  errorMessage = ""
+  hoveredKey = nil
+  render()
+  fetchGenreStations(0)
 end
 
 local function publishPlaying()
@@ -343,7 +502,7 @@ local function loadFavorites()
 end
 
 local function isFavorite(uuid)
-  for i, f in ipairs(favorites) do
+  for _, f in ipairs(favorites) do
     if f.uuid == uuid then
       return true
     end
@@ -368,6 +527,9 @@ local function toggleFavorite(station)
     end
   end
   table.insert(favorites, station)
+  favAnimUuid = station.uuid
+  favAnimStart = os.clock() * 1000
+  panel.setNeedsFrameTick(true)
   saveFavorites()
   render()
 end
@@ -449,11 +611,9 @@ local function countryCount(code)
 end
 
 local function statCard(label, value)
-  return ui.column({ flexGrow = 1, align = "stretch" }, {
-    ui.column({ gap = 2, padding = 10, radius = 8, fill = "surface_variant/0.65", align = "center" }, {
-      ui.label({ text = value, fontSize = 20, fontWeight = "bold", color = "primary" }),
-      ui.label({ text = label, fontSize = 11, color = "outline" }),
-    }),
+  return ui.column({ gap = 2, padding = 10, radius = 8, fill = "surface_variant/0.65", align = "center" }, {
+    ui.label({ text = value, fontSize = 20, fontWeight = "bold", color = "primary" }),
+    ui.label({ text = label, fontSize = 11, color = "outline" }),
   })
 end
 
@@ -470,15 +630,87 @@ local function centeredLabel(text, color)
   })
 end
 
-local function countryRow(c)
+local function countryCard(c)
+  local key = "country-" .. c.iso
   local flag = flagEmoji(c.iso)
-  local flagInner = (flag ~= "") and ui.label({ text = flag, fontSize = 12 }) or ui.glyph({ name = "world", size = 13, color = "outline" })
+  local flagInner = (flag ~= "")
+    and ui.label({ text = flag, fontSize = 14 })
+    or ui.glyph({ name = "world", size = 14, color = "outline" })
+  local isHovered = (hoveredKey == key)
+  return ui.column({
+    key         = key,
+    gap         = 4,
+    padding     = 8,
+    radius      = 8,
+    fill        = isHovered and "surface_variant/0.9" or "surface_variant/0.5",
+    align       = "center",
+    justify     = "center",
+    flexGrow    = 1,
+    onClick     = function() selectCountry(c.iso, c.name) end,
+    onHover     = function(isHovering)
+      hoveredKey = isHovering and key or nil
+      render()
+    end,
+  }, {
+    ui.column({ width = 28, height = 28, radius = 7, fill = "surface_variant/0.65", align = "center", justify = "center" }, { flagInner }),
+    ui.label({ text = c.name, fontSize = 10, maxLines = 1, textAlign = "center" }),
+    ui.column({ paddingH = 6, paddingV = 1, radius = 8, fill = "primary/0.15" }, {
+      ui.label({ text = tostring(c.count), fontSize = 9, fontWeight = "bold", color = "primary" }),
+    }),
+  })
+end
+
+local function countryRow(c)
+  local key = "country-" .. c.iso
+  local flag = flagEmoji(c.iso)
+  local flagInner = (flag ~= "")
+    and ui.label({ text = flag, fontSize = 12 })
+    or ui.glyph({ name = "world", size = 13, color = "outline" })
   local flagWidget = ui.column({ width = 24, height = 24, radius = 6, fill = "surface_variant/0.65", align = "center", justify = "center" }, { flagInner })
-  return ui.row({ key = "country-" .. c.iso, gap = 8, align = "center", paddingV = 2, onClick = function() selectCountry(c.iso, c.name) end }, {
+  local isHovered = (hoveredKey == key)
+  return ui.row({
+    key     = key,
+    gap     = 8,
+    align   = "center",
+    paddingH = 6,
+    paddingV = 1,
+    radius  = 6,
+    fill        = "surface_variant/0.4",
+    border      = "outline",
+    borderWidth = isHovered and 1 or 0,
+    onClick = function() selectCountry(c.iso, c.name) end,
+    onHover = function(isHovering)
+      hoveredKey = isHovering and key or nil
+      render()
+    end,
+  }, {
     flagWidget,
     ui.label({ text = c.name, fontSize = 12, flexGrow = 1, maxLines = 1 }),
     ui.label({ text = tostring(c.count), fontSize = 12, fontWeight = "bold", color = "outline" }),
     ui.glyph({ name = "chevron-right", size = 13, color = "outline" }),
+  })
+end
+
+local function genreChip(g)
+  local key = "genre-" .. g.tag
+  local isActive = (selectedGenre and selectedGenre.tag == g.tag)
+  local isHovered = (hoveredKey == key)
+  return ui.row({
+    key     = key,
+    gap     = 4,
+    paddingH = 8,
+    paddingV = 4,
+    radius  = 14,
+    align   = "center",
+    fill    = isActive and "primary/0.2" or (isHovered and "surface_variant/0.8" or "surface_variant/0.55"),
+    onClick = function() selectGenre(g) end,
+    onHover = function(isHovering)
+      hoveredKey = isHovering and key or nil
+      render()
+    end,
+  }, {
+    ui.glyph({ name = g.icon, size = 11, color = isActive and "primary" or "outline" }),
+    ui.label({ text = g.name, fontSize = 10, color = isActive and "primary" or "on_surface" }),
   })
 end
 
@@ -506,8 +738,8 @@ renderDashboard = function()
   end
 
   table.insert(children, ui.row({ gap = 8 }, {
-    statCard(tr("panel.total_stations"), totalStations),
-    statCard(tr("panel.total_countries"), totalCountries),
+    ui.column({ flexGrow = 1, align = "stretch" }, { statCard(tr("panel.total_stations"), totalStations) }),
+    ui.column({ flexGrow = 1, align = "stretch" }, { statCard(tr("panel.total_countries"), totalCountries) }),
   }))
 
   table.insert(children, ui.input({
@@ -518,28 +750,88 @@ renderDashboard = function()
     onChange    = "onSearchCountries",
   }))
 
+  local scrollChildren = {}
+
   if countries == nil and errorMessage ~= "" then
-    table.insert(children, centeredLabel(errorMessage, "on_surface/0.6"))
+    table.insert(scrollChildren, centeredLabel(errorMessage, "on_surface/0.6"))
   elseif countries == nil and loading then
-    table.insert(children, ui.column({ flexGrow = 1, align = "center", justify = "center" }, { spinnerRow() }))
+    table.insert(scrollChildren, ui.column({ flexGrow = 1, align = "center", justify = "center", padding = 24 }, { spinnerRow() }))
   elseif countries ~= nil then
     local q = noctalia.string.trim(query):lower()
-    local matches = {}
-    for _, c in ipairs(countries) do
-      if q == "" or c.name:lower():find(q, 1, true) ~= nil then
-        table.insert(matches, c)
+
+    if q == "" then
+      table.insert(scrollChildren, ui.label({ text = tr("panel.genres_title"), fontSize = 11, fontWeight = "bold", color = "outline" }))
+      local chipRows = {}
+      for i = 1, #GENRES, 5 do
+        local row = {}
+        for j = i, math.min(i + 4, #GENRES) do
+          table.insert(row, genreChip(GENRES[j]))
+        end
+        table.insert(chipRows, ui.row({ gap = 6, align = "center" }, row))
       end
-    end
-    if #matches == 0 then
-      table.insert(children, centeredLabel(tr("panel.countries_empty")))
+      table.insert(scrollChildren, ui.column({ gap = 6 }, chipRows))
+
+      if #countries > 0 then
+        table.insert(scrollChildren, ui.separator({}))
+        table.insert(scrollChildren, ui.label({ text = tr("panel.top_countries"), fontSize = 11, fontWeight = "bold", color = "outline" }))
+        local topN = {}
+        for i = 1, math.min(TOP_COUNTRIES, #countries) do
+          table.insert(topN, countryCard(countries[i]))
+        end
+        local cardRows = {}
+        for i = 1, #topN, 4 do
+          local row = {}
+          for j = i, math.min(i + 3, #topN) do
+            table.insert(row, topN[j])
+          end
+          table.insert(cardRows, ui.row({ gap = 6, align = "stretch" }, row))
+        end
+        table.insert(scrollChildren, ui.column({ gap = 6 }, cardRows))
+
+        if #countries > TOP_COUNTRIES then
+          table.insert(scrollChildren, ui.separator({}))
+          local remainingCount = #countries - TOP_COUNTRIES
+          table.insert(scrollChildren, ui.row({
+            key         = "all-countries-toggle",
+            gap         = 6,
+            align       = "center",
+            paddingH    = 8,
+            paddingV    = 6,
+            radius      = 7,
+            fill        = "surface_variant/0.5",
+            onClick     = function()
+              countriesExpanded = not countriesExpanded
+              render()
+            end,
+          }, {
+            ui.label({ text = tr("panel.all_countries", { count = tostring(remainingCount) }), fontSize = 12, fontWeight = "bold", flexGrow = 1 }),
+            ui.glyph({ name = countriesExpanded and "chevron-up" or "chevron-down", size = 14, color = "outline" }),
+          }))
+          if countriesExpanded then
+            for i = TOP_COUNTRIES + 1, #countries do
+              table.insert(scrollChildren, countryRow(countries[i]))
+            end
+          end
+        end
+      end
     else
-      local rows = {}
-      for _, c in ipairs(matches) do
-        table.insert(rows, countryRow(c))
+      local matches = {}
+      for _, c in ipairs(countries) do
+        if c.name:lower():find(q, 1, true) ~= nil then
+          table.insert(matches, c)
+        end
       end
-      table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
+      if #matches == 0 then
+        table.insert(scrollChildren, centeredLabel(tr("panel.countries_empty")))
+      else
+        for _, c in ipairs(matches) do
+          table.insert(scrollChildren, countryRow(c))
+        end
+      end
     end
   end
+
+  table.insert(children, ui.scroll({ gap = 8, flexGrow = 1 }, scrollChildren))
 
   return children
 end
@@ -556,6 +848,10 @@ local function stationRow(s)
     table.insert(meta, tostring(s.bitrate))
   end
   local metaText = table.concat(meta, " · ")
+
+  local isFavAnim = favAnimUuid == s.uuid
+  local key = "station-" .. s.uuid
+  local isHovered = (hoveredKey == key)
 
   local parts = {}
   if thumb ~= nil then
@@ -575,8 +871,10 @@ local function stationRow(s)
   end
 
   local faved = isFavorite(s.uuid)
+  local starSize = isFavAnim and 17 or 13
   table.insert(parts, ui.button({
     glyph       = faved and "star-filled" or "star",
+    glyphSize   = starSize,
     variant     = "ghost",
     controlSize = "sm",
     tooltip     = faved and tr("panel.unfavorite_tooltip") or tr("panel.favorite_tooltip"),
@@ -597,7 +895,21 @@ local function stationRow(s)
     end,
   }))
 
-  return ui.row({ key = "station-" .. s.uuid, gap = 6, align = "center", paddingV = 1 }, parts)
+  return ui.row({
+    key     = key,
+    gap     = 6,
+    align   = "center",
+    paddingH = 6,
+    paddingV = 1,
+    radius  = 6,
+    fill        = "surface_variant/0.4",
+    border      = "outline",
+    borderWidth = isHovered and 1 or 0,
+    onHover = function(isHovering)
+      hoveredKey = isHovering and key or nil
+      render()
+    end,
+  }, parts)
 end
 
 renderCountry = function()
@@ -659,6 +971,114 @@ renderCountry = function()
   return children
 end
 
+renderGenre = function()
+  local children = {}
+
+  if selectedGenre ~= nil then
+    local genreIcon = ui.glyph({ name = selectedGenre.icon, size = 16, color = "primary" })
+    table.insert(children, ui.row({ gap = 8, align = "center" }, {
+      genreIcon,
+      ui.column({ flexGrow = 1, gap = 0 }, {
+        ui.label({ text = selectedGenre.name, fontSize = 15, fontWeight = "bold", maxLines = 1 }),
+        ui.label({ text = tr("panel.genre_stations"), fontSize = 11, color = "outline" }),
+      }),
+    }))
+  end
+
+  if genreStations == nil and genreLoading then
+    table.insert(children, ui.column({ flexGrow = 1, align = "center", justify = "center" }, { spinnerRow() }))
+  elseif genreStations == nil and genreErr then
+    table.insert(children, centeredLabel(tr("panel.error_network"), "on_surface/0.6"))
+  elseif genreStations ~= nil then
+    table.insert(children, ui.input({
+      key         = "genre-search-" .. genreQueryKey,
+      value       = genreQuery,
+      controlSize = "sm",
+      placeholder = tr("panel.search_stations_placeholder"),
+      onChange    = "onGenreSearch",
+    }))
+    local q = noctalia.string.trim(genreQuery):lower()
+    local visible = {}
+    for _, s in ipairs(genreStations) do
+      if q == "" or s.name:lower():find(q, 1, true) ~= nil then
+        table.insert(visible, s)
+      end
+    end
+    if #visible == 0 and #genreStations == 0 then
+      table.insert(children, centeredLabel(tr("panel.stations_empty")))
+    elseif #visible == 0 then
+      table.insert(children, centeredLabel(tr("panel.stations_none_match")))
+    else
+      local rows = {}
+      for _, s in ipairs(visible) do
+        table.insert(rows, stationRow(s))
+      end
+      table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
+      if not genreDone then
+        table.insert(children, ui.button({
+          text         = tr("panel.load_more"),
+          variant      = "secondary",
+          controlSize  = "md",
+          contentAlign = "center",
+          enabled      = not genreLoading,
+          onClick      = "onLoadMoreGenre",
+        }))
+      end
+    end
+  end
+
+  return children
+end
+
+renderGlobalSearch = function()
+  local children = {}
+
+  table.insert(children, ui.row({ gap = 8, align = "center" }, {
+    ui.glyph({ name = "search", size = 16, color = "primary" }),
+    ui.column({ flexGrow = 1, gap = 0 }, {
+      ui.label({ text = tr("panel.search_title"), fontSize = 15, fontWeight = "bold", maxLines = 1 }),
+      ui.label({ text = tr("panel.search_subtitle"), fontSize = 11, color = "outline" }),
+    }),
+  }))
+
+  table.insert(children, ui.input({
+    key         = "global-search-" .. globalSearchKey,
+    value       = globalSearch,
+    controlSize = "sm",
+    focus       = true,
+    placeholder = tr("panel.search_global_placeholder"),
+    onChange    = "onGlobalSearchChanged",
+  }))
+
+  if globalResults == nil and globalLoading then
+    table.insert(children, ui.column({ flexGrow = 1, align = "center", justify = "center" }, { spinnerRow() }))
+  elseif globalResults == nil and globalErr then
+    table.insert(children, centeredLabel(tr("panel.error_network"), "on_surface/0.6"))
+  elseif globalResults == nil then
+    table.insert(children, centeredLabel(tr("panel.search_hint")))
+  elseif #globalResults == 0 then
+    table.insert(children, centeredLabel(tr("panel.search_no_results")))
+  else
+    local rows = {}
+    for _, s in ipairs(globalResults) do
+      table.insert(rows, stationRow(s))
+    end
+    table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
+    if not globalDone then
+      table.insert(children, ui.button({
+        text         = tr("panel.load_more"),
+        variant      = "secondary",
+        controlSize  = "md",
+        contentAlign = "center",
+        enabled      = not globalLoading,
+        onClick      = "onLoadMoreGlobal",
+      }))
+    end
+  end
+
+  return children
+end
+
 renderFavorites = function()
   local children = {}
 
@@ -684,7 +1104,9 @@ renderFavorites = function()
 end
 
 local function customRow(s, index)
+  local key = "custom-" .. s.uuid
   local isPlaying = playingUuid == s.uuid
+  local isHovered = (hoveredKey == key)
   local labels = { ui.label({ text = s.name, fontSize = 12, maxLines = 1 }) }
   local parts = {
     ui.glyph({ name = "radio", size = 15, color = "outline" }),
@@ -710,7 +1132,21 @@ local function customRow(s, index)
       end
     end,
   }))
-  return ui.row({ key = "custom-" .. s.uuid, gap = 6, align = "center", paddingV = 1 }, parts)
+  return ui.row({
+    key     = key,
+    gap     = 6,
+    align   = "center",
+    paddingH = 6,
+    paddingV = 1,
+    radius  = 6,
+    fill        = "surface_variant/0.4",
+    border      = "outline",
+    borderWidth = isHovered and 1 or 0,
+    onHover = function(isHovering)
+      hoveredKey = isHovering and key or nil
+      render()
+    end,
+  }, parts)
 end
 
 renderCustom = function()
@@ -794,6 +1230,36 @@ renderAddCustom = function()
   return children
 end
 
+renderMiniPlayer = function()
+  if playingUuid == nil then
+    return nil
+  end
+  local thumb = thumbs[playingUuid]
+  local parts = {}
+  table.insert(parts, ui.glyph({ name = "volume-2", size = 11, color = "primary" }))
+  if thumb ~= nil then
+    table.insert(parts, ui.image({ path = thumb, width = 22, height = 22, radius = 4 }))
+  end
+  table.insert(parts, ui.label({ text = playingName, fontSize = 11, maxLines = 1, flexGrow = 1 }))
+  table.insert(parts, ui.button({
+    glyph       = "square",
+    variant     = "primary",
+    controlSize = "sm",
+    tooltip     = tr("panel.stop_tooltip"),
+    onClick     = stopPlayback,
+  }))
+  return ui.row({
+    gap         = 6,
+    align       = "center",
+    paddingH    = 8,
+    paddingV    = 6,
+    radius      = 8,
+    fill        = "primary/0.12",
+    border      = "primary/0.25",
+    borderWidth = 1,
+  }, parts)
+end
+
 render = function()
   local children = {}
 
@@ -811,6 +1277,13 @@ render = function()
     }))
   end
   table.insert(headerParts, ui.button({
+    glyph       = "search",
+    variant     = "ghost",
+    controlSize = "md",
+    tooltip     = tr("panel.search_title"),
+    onClick     = "onOpenGlobalSearch",
+  }))
+  table.insert(headerParts, ui.button({
     glyph       = (#favorites > 0) and "star-filled" or "star",
     variant     = "ghost",
     controlSize = "md",
@@ -824,15 +1297,6 @@ render = function()
     tooltip     = tr("panel.custom_title"),
     onClick     = openCustom,
   }))
-  if playingUuid ~= nil then
-    table.insert(headerParts, ui.button({
-      glyph       = "square",
-      variant     = "outline",
-      controlSize = "md",
-      tooltip     = tr("panel.stop_tooltip"),
-      onClick     = "onStop",
-    }))
-  end
 
   table.insert(children, ui.row({ gap = 6, align = "center" }, headerParts))
   table.insert(children, ui.separator({}))
@@ -840,12 +1304,16 @@ render = function()
   local body
   if view == "country" then
     body = renderCountry()
+  elseif view == "genre" then
+    body = renderGenre()
   elseif view == "favorites" then
     body = renderFavorites()
   elseif view == "custom" then
     body = renderCustom()
   elseif view == "add_custom" then
     body = renderAddCustom()
+  elseif view == "search" then
+    body = renderGlobalSearch()
   else
     body = renderDashboard()
   end
@@ -853,7 +1321,13 @@ render = function()
     table.insert(children, el)
   end
 
-  panel.render(ui.column({ gap = 10, padding = 12, flexGrow = 1, align = "stretch" }, children))
+  local mini = renderMiniPlayer()
+  if mini ~= nil then
+    table.insert(children, ui.separator({}))
+    table.insert(children, mini)
+  end
+
+  panel.render(ui.column({ gap = 8, padding = 12, flexGrow = 1, align = "stretch" }, children))
 end
 
 function onOpen(_context)
@@ -866,6 +1340,7 @@ function onOpen(_context)
     stats = cachedStats
   end
   view = "dashboard"
+  hoveredKey = nil
   render()
   fetchCountries()
 end
@@ -873,11 +1348,26 @@ end
 function onBack()
   if view == "add_custom" then
     view = "custom"
+  elseif view == "genre" then
+    view = "dashboard"
+    selectedGenre = nil
+  elseif view == "search" then
+    view = "dashboard"
+    globalSearchNonce = globalSearchNonce + 1
+    globalSearch = ""
+    globalSearchKey = globalSearchKey + 1
+    globalResults = nil
+    globalOffset = 0
+    globalDone = false
+    globalErr = false
+    globalLoading = false
   else
     view = "dashboard"
   end
   stations = nil
+  genreStations = nil
   errorMessage = ""
+  hoveredKey = nil
   render()
 end
 
@@ -901,9 +1391,74 @@ function onStationSearch(value)
   render()
 end
 
+function onGenreSearch(value)
+  genreQuery = value or ""
+  render()
+end
+
 function onLoadMore()
   if stationsOffset > 0 then
     fetchStations(stationsOffset)
+  end
+end
+
+function onOpenGlobalSearch()
+  view = "search"
+  errorMessage = ""
+  globalSearch = ""
+  globalSearchKey = globalSearchKey + 1
+  globalResults = nil
+  globalOffset = 0
+  globalDone = false
+  globalErr = false
+  globalLoading = false
+  globalSearchNonce = globalSearchNonce + 1
+  render()
+end
+
+function onGlobalSearchChanged(value)
+  globalSearch = value or ""
+  local q = noctalia.string.trim(globalSearch)
+  if #q < 2 then
+    globalSearchNonce = globalSearchNonce + 1
+    globalResults = nil
+    globalOffset = 0
+    globalDone = false
+    globalErr = false
+    globalLoading = false
+    render()
+    return
+  end
+  globalSearchNonce = globalSearchNonce + 1
+  local nonce = globalSearchNonce
+  render()
+  noctalia.runAsync(string.format("sleep %.3f", SEARCH_DEBOUNCE_MS / 1000), function()
+    if globalSearchNonce == nonce then
+      fetchGlobalSearch(0)
+    end
+  end)
+end
+
+function onLoadMoreGlobal()
+  if globalOffset > 0 then
+    fetchGlobalSearch(globalOffset)
+  end
+end
+
+function onLoadMoreGenre()
+  if genreOffset > 0 then
+    fetchGenreStations(genreOffset)
+  end
+end
+
+function onFrameTick(_deltaMs)
+  if favAnimUuid ~= nil then
+    local elapsed = os.clock() * 1000 - favAnimStart
+    if elapsed >= FAV_ANIM_MS then
+      favAnimUuid = nil
+      panel.setNeedsFrameTick(false)
+    end
+    render()
   end
 end
 
