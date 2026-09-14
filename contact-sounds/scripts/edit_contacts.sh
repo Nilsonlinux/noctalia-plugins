@@ -205,6 +205,10 @@ with open(FILE, encoding="utf-8") as fh:
     lines = fh.read().splitlines()
 
 p_start, _p_end = section_bounds(PARENT)
+if p_start is None:
+    _starts = [(s, e) for s, e in (section_bounds(section_name(_t)) for _t in TABLES) if s is not None]
+    if _starts:
+        p_start, _p_end = min(_starts, key=lambda _se: _se[0])
 
 # Where the next real (top-level) section after the plugin realm starts.
 # A managed subsection header is a continuation of this realm, not its end.
