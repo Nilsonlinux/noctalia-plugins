@@ -19,9 +19,9 @@ station plays, its logo appears in the media widget thanks to mpv's
   sorted by station count, and each country's flag in a small rounded square
   matching the plugin's cards.
 - **Per-country stations** - tap a country to list its stations ordered by
-  votes. Rows show the station's favicon (downloaded on demand), name, codec,
-  bitrate and vote count, with a **Load more** button for the next page
-  (100 stations per page).
+  votes. A search box above the list filters them by name, and rows show the
+  station's favicon (downloaded on demand), codec, bitrate and vote count,
+  with a **Load more** button for the next page (100 stations per page).
 - **Favorites** - star any station to save it; all favorites live in one
   place and are persisted to disk.
 - **Local radios** - add your own stations by URL (name is optional and
@@ -75,9 +75,9 @@ noctalia msg panel-toggle nilsonlinux/world-radio:Panel
 1. Click the radio widget in the bar (or open the panel via IPC).
 2. **Dashboard** - search or scroll the country list; the stat cards show the
    total of stations and countries. Tap a country to open it.
-3. **Country view** - tap the play button on a station to start it (it
-   becomes a stop button while playing), the star to favorite it, or **Load
-   more** for the next page.
+3. **Country view** - type in the search box to filter stations by name, tap
+   the play button on a station to start it (it becomes a stop button while
+   playing), the star to favorite it, or **Load more** for the next page.
 4. **Favorites** - the star button in the header lists every station you
    starred.
 5. **Local radios** - the broadcast button in the header opens your saved

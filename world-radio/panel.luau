@@ -25,6 +25,8 @@ local countries = nil
 local stats = nil
 local query = ""
 local queryKey = 0
+local stationQuery = ""
+local stationQueryKey = 0
 
 local selectedCode = nil
 local selectedName = ""
@@ -42,11 +44,16 @@ local playingUrl = ""
 local favorites = {}
 local thumbs = {}
 local thumbPending = {}
+local customStations = {}
+local customFormName = ""
+local customFormUrl = ""
 
 local render
 local renderDashboard
 local renderCountry
 local renderFavorites
+local renderCustom
+local renderAddCustom
 
 local function tr(key, subst)
   if subst == nil then
@@ -224,6 +231,8 @@ local function selectCountry(code, name)
   stationsOffset = 0
   stationsDone = false
   stationsErr = false
+  stationQuery = ""
+  stationQueryKey = stationQueryKey + 1
   loading = false
   errorMessage = ""
   render()
@@ -246,69 +255,6 @@ local function stopPlayback()
   noctalia.runAsync("kill $(cat " .. shellQuote(getDataDir() .. "/player.pid") .. " 2>/dev/null) 2>/dev/null")
   render()
 end
-
-local function playStation(station)
-  local pidFile = getDataDir() .. "/player.pid"
-  playingUuid = station.uuid
-  playingName = station.name
-  playingUrl = station.url
-  publishPlaying()
-  render()
-  ensureFavicon(station, function(cover)
-    local coverArg = ""
-    if playerName == "mpv" and cover ~= nil then
-      coverArg = " --cover-art-files=" .. shellQuote(cover)
-    end
-    local cmd = string.format(
-      "kill $(cat %s 2>/dev/null) 2>/dev/null; %s %s%s %s >/dev/null 2>&1 & echo $! > %s",
-      shellQuote(pidFile), playerName, playerArgs, coverArg, shellQuote(station.url), shellQuote(pidFile)
-    )
-    noctalia.runAsync(cmd)
-  end)
-end
-
-local function loadFavorites()
-  local raw = noctalia.readFile(getDataDir() .. "/favorites.json")
-  if raw == nil then
-    return
-  end
-  local ok, val = pcall(noctalia.json.decode, raw)
-  if ok and type(val) == "table" then
-    favorites = val
-  end
-end
-
-local function isFavorite(uuid)
-  for i, f in ipairs(favorites) do
-    if f.uuid == uuid then
-      return true
-    end
-  end
-  return false
-end
-
-local function saveFavorites()
-  local ok, encoded = pcall(noctalia.json.encode, favorites)
-  if ok and encoded ~= nil then
-    noctalia.writeFile(getDataDir() .. "/favorites.json", encoded)
-  end
-end
-
-local function toggleFavorite(station)
-  for i, f in ipairs(favorites) do
-    if f.uuid == station.uuid then
-      table.remove(favorites, i)
-      saveFavorites()
-      render()
-      return
-    end
-  end
-  table.insert(favorites, station)
-  saveFavorites()
-  render()
-end
-
-loadFavorites()
 
 local faviconJobs = {}
 
@@ -357,6 +303,139 @@ local function loadFavicon(station)
   ensureFavicon(station, function() end)
 end
 
+local function playStation(station)
+  local pidFile = getDataDir() .. "/player.pid"
+  playingUuid = station.uuid
+  playingName = station.name
+  playingUrl = station.url
+  publishPlaying()
+  render()
+  local cover = nil
+  if playerName == "mpv" then
+    local dest = faviconDest(station)
+    if dest ~= nil and noctalia.fileInfo(dest) ~= nil then
+      cover = dest
+    end
+  end
+  local coverArg = ""
+  if cover ~= nil then
+    coverArg = " --cover-art-files=" .. shellQuote(cover)
+  end
+  local cmd = string.format(
+    "kill $(cat %s 2>/dev/null) 2>/dev/null; %s %s%s %s >/dev/null 2>&1 & echo $! > %s",
+    shellQuote(pidFile), playerName, playerArgs, coverArg, shellQuote(station.url), shellQuote(pidFile)
+  )
+  noctalia.runAsync(cmd)
+  if cover == nil then
+    loadFavicon(station)
+  end
+end
+
+local function loadFavorites()
+  local raw = noctalia.readFile(getDataDir() .. "/favorites.json")
+  if raw == nil then
+    return
+  end
+  local ok, val = pcall(noctalia.json.decode, raw)
+  if ok and type(val) == "table" then
+    favorites = val
+  end
+end
+
+local function isFavorite(uuid)
+  for i, f in ipairs(favorites) do
+    if f.uuid == uuid then
+      return true
+    end
+  end
+  return false
+end
+
+local function saveFavorites()
+  local ok, encoded = pcall(noctalia.json.encode, favorites)
+  if ok and encoded ~= nil then
+    noctalia.writeFile(getDataDir() .. "/favorites.json", encoded)
+  end
+end
+
+local function toggleFavorite(station)
+  for i, f in ipairs(favorites) do
+    if f.uuid == station.uuid then
+      table.remove(favorites, i)
+      saveFavorites()
+      render()
+      return
+    end
+  end
+  table.insert(favorites, station)
+  saveFavorites()
+  render()
+end
+
+loadFavorites()
+
+local function loadCustomStations()
+  local raw = noctalia.readFile(getDataDir() .. "/custom-stations.json")
+  if raw == nil then
+    return
+  end
+  local ok, val = pcall(noctalia.json.decode, raw)
+  if ok and type(val) == "table" then
+    customStations = val
+  end
+end
+
+local function saveCustomStations()
+  local ok, encoded = pcall(noctalia.json.encode, customStations)
+  if ok and encoded ~= nil then
+    noctalia.writeFile(getDataDir() .. "/custom-stations.json", encoded)
+  end
+end
+
+local function openCustom()
+  view = "custom"
+  errorMessage = ""
+  render()
+end
+
+local function openAddCustom()
+  view = "add_custom"
+  customFormName = ""
+  customFormUrl = ""
+  render()
+end
+
+local function saveCustomStation()
+  local url = noctalia.string.trim(customFormUrl)
+  if url == "" then
+    return
+  end
+  local name = noctalia.string.trim(customFormName)
+  if name == "" then
+    name = url:match("^%a+://([^/:]+)") or url
+  end
+  table.insert(customStations, {
+    uuid = "custom-" .. tostring(os.time()) .. "-" .. tostring(#customStations + 1),
+    name = name,
+    url = url,
+    favicon = "",
+    codec = "",
+    bitrate = 0,
+    votes = 0,
+  })
+  saveCustomStations()
+  view = "custom"
+  render()
+end
+
+local function removeCustomStation(index)
+  table.remove(customStations, index)
+  saveCustomStations()
+  render()
+end
+
+loadCustomStations()
+
 local function countryCount(code)
   if countries == nil then
     return 0
@@ -370,9 +449,11 @@ local function countryCount(code)
 end
 
 local function statCard(label, value)
-  return ui.column({ flexGrow = 1, gap = 2, padding = 10, radius = 8, fill = "surface_variant/0.65", align = "center" }, {
-    ui.label({ text = value, fontSize = 20, fontWeight = "bold", color = "primary" }),
-    ui.label({ text = label, fontSize = 11, color = "outline" }),
+  return ui.column({ flexGrow = 1, align = "stretch" }, {
+    ui.column({ gap = 2, padding = 10, radius = 8, fill = "surface_variant/0.65", align = "center" }, {
+      ui.label({ text = value, fontSize = 20, fontWeight = "bold", color = "primary" }),
+      ui.label({ text = label, fontSize = 11, color = "outline" }),
+    }),
   })
 end
 
@@ -384,14 +465,15 @@ local function spinnerRow()
 end
 
 local function centeredLabel(text, color)
-  return ui.column({ flexGrow = 1, align = "center", justify = "center" }, {
+  return ui.column({ flexGrow = 1, align = "center", justify = "center", padding = 32 }, {
     ui.label({ text = text, color = color or "outline", textAlign = "center" }),
   })
 end
 
 local function countryRow(c)
   local flag = flagEmoji(c.iso)
-  local flagWidget = (flag ~= "") and ui.label({ text = flag, fontSize = 16 }) or ui.glyph({ name = "world", size = 15, color = "outline" })
+  local flagInner = (flag ~= "") and ui.label({ text = flag, fontSize = 12 }) or ui.glyph({ name = "world", size = 13, color = "outline" })
+  local flagWidget = ui.column({ width = 24, height = 24, radius = 6, fill = "surface_variant/0.65", align = "center", justify = "center" }, { flagInner })
   return ui.row({ key = "country-" .. c.iso, gap = 8, align = "center", paddingV = 2, onClick = function() selectCountry(c.iso, c.name) end }, {
     flagWidget,
     ui.label({ text = c.name, fontSize = 12, flexGrow = 1, maxLines = 1 }),
@@ -439,7 +521,6 @@ renderDashboard = function()
   if countries == nil and errorMessage ~= "" then
     table.insert(children, centeredLabel(errorMessage, "on_surface/0.6"))
   elseif countries == nil and loading then
-    table.insert(children, centeredLabel("", "outline"))
     table.insert(children, ui.column({ flexGrow = 1, align = "center", justify = "center" }, { spinnerRow() }))
   elseif countries ~= nil then
     local q = noctalia.string.trim(query):lower()
@@ -522,41 +603,56 @@ end
 renderCountry = function()
   local children = {}
 
-  local flag = flagEmoji(selectedCode)
-  local flagInner = (flag ~= "") and ui.label({ text = flag, fontSize = 24 }) or ui.glyph({ name = "world", size = 20, color = "outline" })
-  local flagWidget = ui.column({ width = 44, height = 44, radius = 22, fill = "surface_variant/0.65", align = "center", justify = "center" }, {
-    flagInner,
-  })
-  table.insert(children, ui.row({ gap = 10, align = "center" }, {
-    flagWidget,
-    ui.column({ flexGrow = 1, gap = 0 }, {
-      ui.label({ text = selectedName, fontSize = 15, fontWeight = "bold", maxLines = 1 }),
-      ui.label({ text = tr("panel.station_count", { count = tostring(countryCount(selectedCode)) }), fontSize = 11, color = "outline" }),
-    }),
+  local headerParts = {}
+  local countryFlag = flagEmoji(selectedCode)
+  if countryFlag ~= "" then
+    table.insert(headerParts, ui.label({ text = countryFlag, fontSize = 20 }))
+  end
+  table.insert(headerParts, ui.column({ flexGrow = 1, gap = 0 }, {
+    ui.label({ text = selectedName, fontSize = 15, fontWeight = "bold", maxLines = 1 }),
+    ui.label({ text = tr("panel.station_count", { count = tostring(countryCount(selectedCode)) }), fontSize = 11, color = "outline" }),
   }))
+  table.insert(children, ui.row({ gap = 8, align = "center" }, headerParts))
 
   if stations == nil and loading then
-    table.insert(children, centeredLabel("", "outline"))
     table.insert(children, ui.column({ flexGrow = 1, align = "center", justify = "center" }, { spinnerRow() }))
   elseif stations == nil and stationsErr then
     table.insert(children, centeredLabel(tr("panel.error_network"), "on_surface/0.6"))
-  elseif stations ~= nil and #stations == 0 then
-    table.insert(children, centeredLabel(tr("panel.stations_empty")))
   elseif stations ~= nil then
-    local rows = {}
+    table.insert(children, ui.input({
+      key         = "station-search-" .. stationQueryKey,
+      value       = stationQuery,
+      controlSize = "sm",
+      placeholder = tr("panel.search_stations_placeholder"),
+      onChange    = "onStationSearch",
+    }))
+    local q = noctalia.string.trim(stationQuery):lower()
+    local visible = {}
     for _, s in ipairs(stations) do
-      table.insert(rows, stationRow(s))
+      if q == "" or s.name:lower():find(q, 1, true) ~= nil then
+        table.insert(visible, s)
+      end
     end
-    table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
-    if not stationsDone then
-      table.insert(children, ui.button({
-        text         = tr("panel.load_more"),
-        variant      = "secondary",
-        controlSize  = "md",
-        contentAlign = "center",
-        enabled      = not loading,
-        onClick      = "onLoadMore",
-      }))
+    if #visible == 0 and #stations == 0 then
+      table.insert(children, centeredLabel(tr("panel.stations_empty")))
+    elseif #visible == 0 then
+      table.insert(children, centeredLabel(tr("panel.stations_none_match")))
+    else
+      local rows = {}
+      for _, s in ipairs(visible) do
+        table.insert(rows, stationRow(s))
+      end
+      table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
+      if not stationsDone then
+        table.insert(children, ui.button({
+          text         = tr("panel.load_more"),
+          variant      = "secondary",
+          controlSize  = "md",
+          contentAlign = "center",
+          enabled      = not loading,
+          onClick      = "onLoadMore",
+        }))
+      end
     end
   end
 
@@ -587,6 +683,117 @@ renderFavorites = function()
   return children
 end
 
+local function customRow(s, index)
+  local isPlaying = playingUuid == s.uuid
+  local labels = { ui.label({ text = s.name, fontSize = 12, maxLines = 1 }) }
+  local parts = {
+    ui.glyph({ name = "radio", size = 15, color = "outline" }),
+    ui.column({ flexGrow = 1, gap = 0 }, labels),
+  }
+  table.insert(parts, ui.button({
+    glyph       = "trash",
+    variant     = "ghost",
+    controlSize = "sm",
+    tooltip     = tr("panel.remove_custom_tooltip"),
+    onClick     = function() removeCustomStation(index) end,
+  }))
+  table.insert(parts, ui.button({
+    glyph       = isPlaying and "square" or "player-play",
+    variant     = isPlaying and "primary" or "ghost",
+    controlSize = "sm",
+    tooltip     = isPlaying and tr("panel.stop_tooltip") or tr("panel.play_tooltip"),
+    onClick     = function()
+      if isPlaying then
+        stopPlayback()
+      else
+        playStation(s)
+      end
+    end,
+  }))
+  return ui.row({ key = "custom-" .. s.uuid, gap = 6, align = "center", paddingV = 1 }, parts)
+end
+
+renderCustom = function()
+  local children = {}
+
+  table.insert(children, ui.row({ gap = 8, align = "center" }, {
+    ui.glyph({ name = "broadcast", size = 16, color = "primary" }),
+    ui.column({ flexGrow = 1, gap = 0 }, {
+      ui.label({ text = tr("panel.custom_title"), fontSize = 15, fontWeight = "bold", maxLines = 1 }),
+      ui.label({ text = tr("panel.custom_count", { count = tostring(#customStations) }), fontSize = 11, color = "outline" }),
+    }),
+    ui.button({
+      glyph       = "plus",
+      variant     = "secondary",
+      controlSize = "md",
+      tooltip     = tr("panel.add_custom_tooltip"),
+      onClick     = openAddCustom,
+    }),
+  }))
+
+  if #customStations == 0 then
+    table.insert(children, ui.column({ gap = 10, align = "center", padding = 32, flexGrow = 1, justify = "center" }, {
+      ui.glyph({ name = "broadcast", size = 32, color = "outline" }),
+      ui.label({ text = tr("panel.custom_empty"), color = "outline", textAlign = "center" }),
+    }))
+  else
+    local rows = {}
+    for i, s in ipairs(customStations) do
+      table.insert(rows, customRow(s, i))
+    end
+    table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
+  end
+
+  return children
+end
+
+renderAddCustom = function()
+  local children = {}
+
+  table.insert(children, ui.row({ gap = 8, align = "center" }, {
+    ui.glyph({ name = "plus", size = 16, color = "primary" }),
+    ui.column({ flexGrow = 1, gap = 0 }, {
+      ui.label({ text = tr("panel.add_custom_title"), fontSize = 15, fontWeight = "bold", maxLines = 1 }),
+      ui.label({ text = tr("panel.add_custom_subtitle"), fontSize = 11, color = "outline" }),
+    }),
+  }))
+
+  table.insert(children, ui.input({
+    key         = "custom-name-input",
+    value       = customFormName,
+    controlSize = "md",
+    placeholder = tr("panel.add_custom_name_placeholder"),
+    onChange    = function(value) customFormName = value or "" end,
+  }))
+
+  table.insert(children, ui.input({
+    key         = "custom-url-input",
+    value       = customFormUrl,
+    controlSize = "md",
+    placeholder = tr("panel.add_custom_url_placeholder"),
+    onChange    = function(value) customFormUrl = value or "" end,
+  }))
+
+  table.insert(children, ui.row({ gap = 8, align = "center" }, {
+    ui.button({
+      text         = tr("panel.add_custom_save"),
+      variant      = "primary",
+      controlSize  = "md",
+      contentAlign = "center",
+      onClick      = saveCustomStation,
+    }),
+    ui.button({
+      text         = tr("panel.add_custom_cancel"),
+      variant      = "ghost",
+      controlSize  = "md",
+      contentAlign = "center",
+      onClick      = openCustom,
+    }),
+  }))
+
+  return children
+end
+
 render = function()
   local children = {}
 
@@ -610,6 +817,13 @@ render = function()
     tooltip     = tr("panel.favorites_title"),
     onClick     = "onOpenFavorites",
   }))
+  table.insert(headerParts, ui.button({
+    glyph       = "broadcast",
+    variant     = "ghost",
+    controlSize = "md",
+    tooltip     = tr("panel.custom_title"),
+    onClick     = openCustom,
+  }))
   if playingUuid ~= nil then
     table.insert(headerParts, ui.button({
       glyph       = "square",
@@ -628,6 +842,10 @@ render = function()
     body = renderCountry()
   elseif view == "favorites" then
     body = renderFavorites()
+  elseif view == "custom" then
+    body = renderCustom()
+  elseif view == "add_custom" then
+    body = renderAddCustom()
   else
     body = renderDashboard()
   end
@@ -653,7 +871,11 @@ function onOpen(_context)
 end
 
 function onBack()
-  view = "dashboard"
+  if view == "add_custom" then
+    view = "custom"
+  else
+    view = "dashboard"
+  end
   stations = nil
   errorMessage = ""
   render()
@@ -671,6 +893,11 @@ end
 
 function onSearchCountries(value)
   query = value or ""
+  render()
+end
+
+function onStationSearch(value)
+  stationQuery = value or ""
   render()
 end
 
