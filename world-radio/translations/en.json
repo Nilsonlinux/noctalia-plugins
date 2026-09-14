@@ -1,0 +1,36 @@
+{
+  "panel": {
+    "back_tooltip": "Back",
+    "countries_empty": "No countries found",
+    "error_network": "Could not reach radio-browser.info. Check your connection.",
+    "favorite_tooltip": "Favorite",
+    "favorites_count": "{count} saved",
+    "favorites_empty": "No favorites yet. Tap the star on any station.",
+    "favorites_title": "Favorites",
+    "load_more": "Load more",
+    "loading": "Loading...",
+    "play_tooltip": "Play",
+    "search_countries_placeholder": "Search countries...",
+    "station_count": "{count} stations",
+    "stations_empty": "No stations found for this country",
+    "stop_tooltip": "Stop",
+    "title": "World Radio",
+    "total_countries": "Countries",
+    "total_stations": "Total stations",
+    "unfavorite_tooltip": "Unfavorite"
+  },
+  "settings": {
+    "glyph": {
+      "description": "Icon shown in the bar for this widget.",
+      "label": "Icon"
+    },
+    "show_now_playing": {
+      "description": "Show the currently playing station name next to the icon.",
+      "label": "Show now playing"
+    }
+  },
+  "widget": {
+    "playing_tooltip": "Now playing: {name}",
+    "tooltip": "Open World Radio"
+  }
+}

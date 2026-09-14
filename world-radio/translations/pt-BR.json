@@ -1,0 +1,36 @@
+{
+  "panel": {
+    "back_tooltip": "Voltar",
+    "countries_empty": "Nenhum país encontrado",
+    "error_network": "Não foi possível acessar radio-browser.info. Verifique sua conexão.",
+    "favorite_tooltip": "Favoritar",
+    "favorites_count": "{count} salvas",
+    "favorites_empty": "Nenhuma favorita ainda. Toque na estrela de qualquer estação.",
+    "favorites_title": "Favoritas",
+    "load_more": "Carregar mais",
+    "loading": "Carregando...",
+    "play_tooltip": "Tocar",
+    "search_countries_placeholder": "Buscar países...",
+    "station_count": "{count} estações",
+    "stations_empty": "Nenhuma estação encontrada para este país",
+    "stop_tooltip": "Parar",
+    "title": "Rádio Mundial",
+    "total_countries": "Países",
+    "total_stations": "Total de estações",
+    "unfavorite_tooltip": "Desfavoritar"
+  },
+  "settings": {
+    "glyph": {
+      "description": "Ícone mostrado na barra para este widget.",
+      "label": "Ícone"
+    },
+    "show_now_playing": {
+      "description": "Mostrar o nome da estação tocando agora ao lado do ícone.",
+      "label": "Mostrar tocando agora"
+    }
+  },
+  "widget": {
+    "playing_tooltip": "Tocando agora: {name}",
+    "tooltip": "Abrir Rádio Mundial"
+  }
+}
