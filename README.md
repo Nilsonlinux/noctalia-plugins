@@ -6,7 +6,7 @@ Plugins Noctalia V5 (Unofficial)
 </p>
 
 ---
-## Plugin
+## Plugins
 
 | Plugin | Description |
 | --- | --- |
