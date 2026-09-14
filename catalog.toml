@@ -25,7 +25,7 @@ tags = ["network", "indicator", "bar", "panel", "service"]
 plugin_api = 14
 version = "1.0.2"
 updated_at = 1788554504
-rev = "6b70d2e6846d72d5f56859104f1329f4f4fb3c27"
+rev = "91abc910753880596ddb1d65e456a336038a5e5d"
 
 [[plugin.release]]
 plugin_api = 14
@@ -50,7 +50,7 @@ tags = ["utility", "indicator", "panel", "bar", "service"]
 plugin_api = 14
 version = "1.2.1"
 updated_at = 1789252056
-rev = "6b70d2e6846d72d5f56859104f1329f4f4fb3c27"
+rev = "91abc910753880596ddb1d65e456a336038a5e5d"
 
 [[plugin.release]]
 plugin_api = 14
@@ -75,7 +75,7 @@ tags = ["utility", "productivity", "service", "panel", "bar"]
 plugin_api = 15
 version = "1.0.0"
 updated_at = 1788127260
-rev = "6b70d2e6846d72d5f56859104f1329f4f4fb3c27"
+rev = "91abc910753880596ddb1d65e456a336038a5e5d"
 
 [[plugin.release]]
 plugin_api = 14
@@ -100,7 +100,7 @@ tags = ["network", "indicator", "bar", "panel"]
 plugin_api = 18
 version = "1.4.5"
 updated_at = 1789074333
-rev = "6b70d2e6846d72d5f56859104f1329f4f4fb3c27"
+rev = "91abc910753880596ddb1d65e456a336038a5e5d"
 
 [[plugin.release]]
 plugin_api = 14
@@ -125,10 +125,29 @@ tags = ["audio", "utility", "bar", "panel", "service"]
 plugin_api = 20
 version = "1.1.0"
 updated_at = 1789314929
-rev = "6b70d2e6846d72d5f56859104f1329f4f4fb3c27"
+rev = "91abc910753880596ddb1d65e456a336038a5e5d"
 
 [[plugin.release]]
 plugin_api = 20
 version = "1.0.0"
 updated_at = 1789160299
 rev = "8460fe48ba47dc686be96d15ec111988844a3530"
+
+[[plugin]]
+id = "nilsonlinux/world-radio"
+name = "World Radio"
+version = "1.0.0"
+updated_at = 1789352394
+added_at = 1789352394
+author = "Nilsonlinux"
+license = "MIT"
+icon = "radio"
+description = "Browse thousands of radio stations from around the world with country flags, play them from a dashboard panel."
+plugin_api = 24
+tags = ["utility", "service", "panel", "bar"]
+
+[[plugin.release]]
+plugin_api = 24
+version = "1.0.0"
+updated_at = 1789352394
+rev = "91abc910753880596ddb1d65e456a336038a5e5d"
