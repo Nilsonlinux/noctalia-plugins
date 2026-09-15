@@ -187,6 +187,10 @@ local failedFavicons = {}
 local customStations = {}
 local customFormName = ""
 local customFormUrl = ""
+local currentSongTitle = ""
+local lastSongPoll = 0
+local SONG_POLL_INTERVAL = 3000
+local MARQUEE_SPEED = 6
 
 local hoveredKey = nil
 local favAnimUuid = nil
@@ -652,11 +656,30 @@ local function publishPlaying()
   })
 end
 
+local playerctlAvailable = noctalia.commandExists("playerctl")
+
+local function pollSongTitle()
+  if playingUuid == nil or not playerctlAvailable then
+    return
+  end
+  noctalia.runAsync({ "playerctl", "metadata", "--player", "mpv", "--format", "{{xesam:title}}" }, function(result)
+    if result.exitCode ~= 0 then
+      return
+    end
+    local title = noctalia.string.trim(result.stdout)
+    if title ~= currentSongTitle then
+      currentSongTitle = title
+      render()
+    end
+  end)
+end
+
 local function stopPlayback()
   playingUuid = nil
   playingName = ""
   playingUrl = ""
   playingStation = nil
+  currentSongTitle = ""
   playQueue = nil
   playQueueView = nil
   stopLivePulse()
@@ -827,6 +850,8 @@ local function playStation(station, sourceView)
   playingName = station.name
   playingUrl = station.url
   playingStation = station
+  currentSongTitle = ""
+  lastSongPoll = 0
   startLivePulse()
   publishPlaying()
   if sourceView ~= nil then
@@ -1956,10 +1981,49 @@ renderMiniPlayer = function()
   local alpha = math.floor((0.20 + 0.80 * wave) * 255)
   local liveColor = LIVE_GREEN .. string.format("%02x", alpha)
   local nameColor = "on_surface"
-  table.insert(parts, ui.row({ gap = 4, align = "center", flexGrow = 1, minWidth = 0 }, {
-    ui.label({ text = playingName, fontSize = 11, maxLines = 1, color = nameColor }),
+  local infoParts = {}
+  local stationLabel = playingName
+  if #stationLabel > 35 then
+    stationLabel = string.sub(stationLabel, 1, 35) .. "…"
+  end
+  table.insert(infoParts, ui.row({ gap = 4, align = "center", minWidth = 0 }, {
+    ui.label({ text = stationLabel, fontSize = 11, maxLines = 1, maxWidth = 370, color = nameColor }),
     ui.glyph({ name = "access-point", size = 12, color = liveColor }),
   }))
+  if currentSongTitle ~= "" then
+    local MARQUEE_VIEW = 34
+    local CHAR_PX = 4
+    local MARQUEE_PAUSE = 2.5
+    local len = #currentSongTitle
+    local marqueeText = currentSongTitle
+    local marqueePad = 0
+    if len > MARQUEE_VIEW then
+      local scrollT = len / MARQUEE_SPEED
+      local cycle = scrollT + MARQUEE_PAUSE
+      local t = now % cycle
+      if t < scrollT then
+        local progress = t * MARQUEE_SPEED
+        local charIdx = math.floor(progress)
+        local frac = progress - math.floor(progress)
+        marqueePad = math.floor((1 - frac) * CHAR_PX)
+        marqueeText = string.sub(currentSongTitle, charIdx + 1, math.min(charIdx + MARQUEE_VIEW, len))
+      else
+        marqueeText = string.sub(currentSongTitle, 1, math.min(MARQUEE_VIEW, len))
+      end
+    end
+    table.insert(infoParts, ui.row({ align = "center", minWidth = 0, paddingH = marqueePad }, {
+      ui.label({
+        key      = "song-title-marquee",
+        text     = marqueeText,
+        fontSize = 10,
+        maxLines = 1,
+        maxWidth = 370,
+        color    = "on_surface/0.65",
+      }),
+    }))
+  end
+  local infoCol = ui.column({ gap = 2, align = "start", flexGrow = 1, minWidth = 0 }, infoParts)
+  table.insert(parts, infoCol)
   local hasQueue = (playQueue ~= nil and #playQueue > 1)
   table.insert(parts, ui.button({
     glyph       = "player-skip-back",
@@ -2273,6 +2337,13 @@ function onLoadMoreAllStations()
 end
 
 function onFrameTick(_deltaMs)
+  if playingUuid ~= nil then
+    local nowMs = noctalia.nowMs()
+    if nowMs - lastSongPoll >= SONG_POLL_INTERVAL then
+      lastSongPoll = nowMs
+      pollSongTitle()
+    end
+  end
   if favAnimUuid ~= nil then
     local elapsed = os.clock() * 1000 - favAnimStart
     if elapsed >= FAV_ANIM_MS then
