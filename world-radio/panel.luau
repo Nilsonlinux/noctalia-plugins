@@ -4,6 +4,7 @@
 
 local COUNTRIES_CACHE_AGE = 4 * 3600
 local STATIONS_PAGE = 100
+local COUNTRIES_PAGE = 50
 local TOP_COUNTRIES = 12
 local SEARCH_DEBOUNCE_MS = 350
 local FAV_ANIM_MS = 500
@@ -131,6 +132,7 @@ end
 local genreLoading = false
 
 local countriesExpanded = false
+local countriesShown = COUNTRIES_PAGE
 local genresExpanded = false
 local decadesExpanded = false
 
@@ -146,6 +148,13 @@ local globalSearchNonce = 0
 local loading = false
 local errorMessage = ""
 
+local allStations = nil
+local allOffset = 0
+local allDone = false
+local allErr = false
+local allLoading = false
+local allCountryShown = COUNTRIES_PAGE
+
 local playingUuid = nil
 local playingName = ""
 local playingUrl = ""
@@ -156,6 +165,7 @@ local playQueueOffset = 0
 local favorites = {}
 local thumbs = {}
 local thumbPending = {}
+local failedFavicons = {}
 local customStations = {}
 local customFormName = ""
 local customFormUrl = ""
@@ -163,6 +173,54 @@ local customFormUrl = ""
 local hoveredKey = nil
 local favAnimUuid = nil
 local favAnimStart = 0
+
+local LIVE_GREEN = "#22c55e"
+
+local function startLivePulse()
+  panel.setNeedsFrameTick(true)
+end
+
+local function stopLivePulse()
+  if favAnimUuid == nil then
+    panel.setNeedsFrameTick(false)
+  end
+end
+
+local PULSE_MS = 900
+local pulseStart = -1
+
+local function easeOutCubic(p)
+  return 1 - (1 - p) ^ 3
+end
+
+local function beginStatsPulse()
+  pulseStart = noctalia.nowMs()
+  panel.setNeedsFrameTick(true)
+end
+
+local function totalStationsNumber()
+  if stats ~= nil and stats.stations ~= nil then
+    return tonumber(stats.stations) or 0
+  end
+  if countries ~= nil then
+    local sum = 0
+    for _, c in ipairs(countries) do
+      sum = sum + (tonumber(c.count) or 0)
+    end
+    return sum
+  end
+  return nil
+end
+
+local function totalCountriesNumber()
+  if stats ~= nil and stats.countries ~= nil then
+    return tonumber(stats.countries) or 0
+  end
+  if countries ~= nil then
+    return #countries
+  end
+  return nil
+end
 
 local render
 local renderDashboard
@@ -174,6 +232,8 @@ local renderAddCustom
 local renderMiniPlayer
 local renderGlobalSearch
 local renderCountrySearch
+local renderAllStations
+local renderAllCountries
 
 local savePlayingState
 local clearPlayingState
@@ -472,6 +532,46 @@ local function fetchGlobalSearch(offset)
   end)
 end
 
+local function fetchAllStations(offset)
+  allLoading = true
+  errorMessage = ""
+  render()
+  local url = string.format(
+    "%s/json/stations/search?order=votes&reverse=true&hidebroken=true&limit=%d&offset=%d",
+    API_BASE, STATIONS_PAGE, offset
+  )
+  httpJson(url, function(data)
+    allLoading = false
+    if data == nil then
+      if allStations == nil then
+        allErr = true
+      end
+      render()
+      return
+    end
+    allStations = allStations or {}
+    for _, s in ipairs(data) do
+      local playUrl = (s.url_resolved ~= nil and s.url_resolved ~= "") and s.url_resolved or (s.url or "")
+      local name = tostring(s.name or "")
+      if name ~= "" and playUrl ~= "" then
+        table.insert(allStations, {
+          uuid = tostring(s.stationuuid or ("as" .. tostring(#allStations + 1))),
+          name = name,
+          url = playUrl,
+          favicon = tostring(s.favicon or ""),
+          codec = tostring(s.codec or ""),
+          bitrate = tonumber(s.bitrate) or 0,
+          votes = tonumber(s.votes) or 0,
+          tags = tostring(s.tags or ""),
+        })
+      end
+    end
+    allOffset = offset + #data
+    allDone = #data < STATIONS_PAGE
+    render()
+  end)
+end
+
 local function selectCountry(code, name)
   view = "country"
   selectedCode = code
@@ -505,6 +605,27 @@ local function selectGenre(genre)
   fetchGenreStations(0)
 end
 
+local function openAllStations()
+  view = "all_stations"
+  allStations = nil
+  allOffset = 0
+  allDone = false
+  allErr = false
+  allLoading = false
+  errorMessage = ""
+  hoveredKey = nil
+  render()
+  fetchAllStations(0)
+end
+
+local function openAllCountries()
+  view = "all_countries"
+  allCountryShown = COUNTRIES_PAGE
+  errorMessage = ""
+  hoveredKey = nil
+  render()
+end
+
 local function publishPlaying()
   noctalia.state.set("playing", {
     name = playingName,
@@ -520,6 +641,7 @@ local function stopPlayback()
   playingStation = nil
   playQueue = nil
   playQueueView = nil
+  stopLivePulse()
   clearPlayingState()
   publishPlaying()
   noctalia.runAsync("kill $(cat " .. shellQuote(getDataDir() .. "/player.pid") .. " 2>/dev/null) 2>/dev/null")
@@ -542,6 +664,10 @@ local function ensureFavicon(station, onDone)
     onDone(nil)
     return
   end
+  if failedFavicons[station.uuid] then
+    onDone(nil)
+    return
+  end
   if noctalia.fileInfo(dest) ~= nil then
     thumbs[station.uuid] = thumbs[station.uuid] or dest
     onDone(dest)
@@ -561,6 +687,8 @@ local function ensureFavicon(station, onDone)
     faviconJobs[station.uuid] = nil
     if ok then
       thumbs[station.uuid] = dest
+    else
+      failedFavicons[station.uuid] = true
     end
     render()
     for _, cb in ipairs(list) do
@@ -645,6 +773,7 @@ restorePlayingState = function()
     end)
   end
   publishPlaying()
+  startLivePulse()
 end
 
 local function viewList(v)
@@ -658,6 +787,8 @@ local function viewList(v)
     return customStations
   elseif v == "search" then
     return globalResults
+  elseif v == "all_stations" then
+    return allStations
   end
   return nil
 end
@@ -668,6 +799,7 @@ local function playStation(station, sourceView)
   playingName = station.name
   playingUrl = station.url
   playingStation = station
+  startLivePulse()
   publishPlaying()
   if sourceView ~= nil then
     local src = viewList(sourceView)
@@ -835,8 +967,27 @@ local function countryCount(code)
   return 0
 end
 
-local function statCard(label, value)
-  return ui.column({ gap = 2, padding = 10, radius = 8, fill = "surface_variant/0.65", align = "center" }, {
+local function statCard(label, value, onClick)
+  local key = "stat-" .. label
+  local isHovered = onClick ~= nil and hoveredKey == key
+  local props = {
+    key      = key,
+    gap      = 2,
+    padding  = 10,
+    radius   = 8,
+    fill     = isHovered and "surface_variant/0.9" or "surface_variant/0.65",
+    align    = "center",
+    justify  = "center",
+    flexGrow = 1,
+  }
+  if onClick ~= nil then
+    props.onClick = onClick
+    props.onHover = function(isHovering)
+      hoveredKey = isHovering and key or nil
+      render()
+    end
+  end
+  return ui.column(props, {
     ui.label({ text = value, fontSize = 20, fontWeight = "bold", color = "primary" }),
     ui.label({ text = label, fontSize = 11, color = "outline" }),
   })
@@ -942,29 +1093,38 @@ end
 renderDashboard = function()
   local children = {}
 
-  local totalStations
-  if stats ~= nil and stats.stations ~= nil then
-    totalStations = tostring(stats.stations)
-  elseif countries ~= nil then
-    local sum = 0
-    for _, c in ipairs(countries) do
-      sum = sum + c.count
+  local totalStationsNum = totalStationsNumber()
+  local totalCountriesNum = totalCountriesNumber()
+
+  local t = 1
+  if pulseStart >= 0 then
+    t = math.min(1, (noctalia.nowMs() - pulseStart) / PULSE_MS)
+    if t >= 1 then
+      pulseStart = -1
+      if playingUuid == nil and favAnimUuid == nil then
+        panel.setNeedsFrameTick(false)
+      end
     end
-    totalStations = tostring(sum)
+  end
+  local eased = easeOutCubic(t)
+
+  local totalStations
+  if totalStationsNum ~= nil then
+    totalStations = tostring(math.floor(eased * totalStationsNum))
   else
     totalStations = "..."
   end
 
-  local totalCountries = "..."
-  if stats ~= nil and stats.countries ~= nil then
-    totalCountries = tostring(stats.countries)
-  elseif countries ~= nil then
-    totalCountries = tostring(#countries)
+  local totalCountries
+  if totalCountriesNum ~= nil then
+    totalCountries = tostring(math.floor(eased * totalCountriesNum))
+  else
+    totalCountries = "..."
   end
 
   table.insert(children, ui.row({ gap = 8 }, {
-    ui.column({ flexGrow = 1, align = "stretch" }, { statCard(tr("panel.total_stations"), totalStations) }),
-    ui.column({ flexGrow = 1, align = "stretch" }, { statCard(tr("panel.total_countries"), totalCountries) }),
+    ui.column({ flexGrow = 1, align = "stretch" }, { statCard(tr("panel.total_stations"), totalStations, openAllStations) }),
+    ui.column({ flexGrow = 1, align = "stretch" }, { statCard(tr("panel.total_countries"), totalCountries, openAllCountries) }),
   }))
 
   table.insert(children, ui.input({
@@ -1072,6 +1232,9 @@ renderDashboard = function()
             fill        = "surface_variant/0.5",
             onClick     = function()
               countriesExpanded = not countriesExpanded
+              if countriesExpanded then
+                countriesShown = COUNTRIES_PAGE
+              end
               render()
             end,
           }, {
@@ -1079,8 +1242,21 @@ renderDashboard = function()
             ui.glyph({ name = countriesExpanded and "chevron-up" or "chevron-down", size = 14, color = "outline" }),
           }))
           if countriesExpanded then
-            for i = TOP_COUNTRIES + 1, #countries do
+            local last = math.min(#countries, TOP_COUNTRIES + countriesShown)
+            for i = TOP_COUNTRIES + 1, last do
               table.insert(scrollChildren, countryRow(countries[i]))
+            end
+            if last < #countries then
+              table.insert(scrollChildren, ui.button({
+                text         = tr("panel.load_more"),
+                variant      = "secondary",
+                controlSize  = "md",
+                contentAlign = "center",
+                onClick      = function()
+                  countriesShown = countriesShown + COUNTRIES_PAGE
+                  render()
+                end,
+              }))
             end
           end
         end
@@ -1392,6 +1568,89 @@ renderCountrySearch = function()
   return children
 end
 
+renderAllStations = function()
+  local children = {}
+
+  table.insert(children, ui.row({ gap = 8, align = "center" }, {
+    ui.glyph({ name = "radio", size = 16, color = "primary" }),
+    ui.column({ flexGrow = 1, gap = 0 }, {
+      ui.label({ text = tr("panel.all_stations_title"), fontSize = 15, fontWeight = "bold", maxLines = 1 }),
+      ui.label({ text = tr("panel.station_count", { count = allStations ~= nil and tostring(#allStations) or "..." }), fontSize = 11, color = "outline" }),
+    }),
+  }))
+
+  if allStations == nil and allLoading then
+    table.insert(children, ui.column({ flexGrow = 1, align = "center", justify = "center" }, { spinnerRow() }))
+  elseif allStations == nil and allErr then
+    table.insert(children, centeredLabel(tr("panel.error_network"), "on_surface/0.6"))
+  elseif allStations ~= nil then
+    if #allStations == 0 then
+      table.insert(children, centeredLabel(tr("panel.stations_empty")))
+    else
+      local rows = {}
+      for _, s in ipairs(allStations) do
+        table.insert(rows, stationRow(s, "all_stations"))
+      end
+      table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
+      if not allDone then
+        table.insert(children, ui.button({
+          text         = tr("panel.load_more"),
+          variant      = "secondary",
+          controlSize  = "md",
+          contentAlign = "center",
+          enabled      = not allLoading,
+          onClick      = "onLoadMoreAllStations",
+        }))
+      end
+    end
+  end
+
+  return children
+end
+
+renderAllCountries = function()
+  local children = {}
+
+  local total = (countries ~= nil) and #countries or 0
+  table.insert(children, ui.row({ gap = 8, align = "center" }, {
+    ui.glyph({ name = "world", size = 16, color = "primary" }),
+    ui.column({ flexGrow = 1, gap = 0 }, {
+      ui.label({ text = tr("panel.all_countries_title"), fontSize = 15, fontWeight = "bold", maxLines = 1 }),
+      ui.label({ text = tr("panel.all_countries_subtitle", { shown = tostring(math.min(allCountryShown, total)), total = tostring(total) }), fontSize = 11, color = "outline" }),
+    }),
+  }))
+
+  local scrollChildren = {}
+  if countries == nil and errorMessage ~= "" then
+    table.insert(scrollChildren, centeredLabel(errorMessage, "on_surface/0.6"))
+  elseif countries == nil and loading then
+    table.insert(scrollChildren, ui.column({ flexGrow = 1, align = "center", justify = "center", padding = 24 }, { spinnerRow() }))
+  elseif countries ~= nil then
+    if #countries == 0 then
+      table.insert(scrollChildren, centeredLabel(tr("panel.countries_empty")))
+    else
+      for i = 1, math.min(allCountryShown, #countries) do
+        table.insert(scrollChildren, countryRow(countries[i]))
+      end
+    end
+  end
+  table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, scrollChildren))
+  if countries ~= nil and allCountryShown < #countries then
+    table.insert(children, ui.button({
+      text         = tr("panel.load_more"),
+      variant      = "secondary",
+      controlSize  = "md",
+      contentAlign = "center",
+      onClick      = function()
+        allCountryShown = math.min(#countries, allCountryShown + COUNTRIES_PAGE)
+        render()
+      end,
+    }))
+  end
+
+  return children
+end
+
 renderFavorites = function()
   local children = {}
 
@@ -1606,6 +1865,13 @@ local function gotoPlayingStation()
       globalDone = playQueueDone
       globalOffset = playQueueOffset
     end
+  elseif playQueueView == "all_stations" then
+    view = "all_stations"
+    if allStations == nil then
+      allStations = playQueue
+      allDone = playQueueDone
+      allOffset = playQueueOffset
+    end
   elseif playQueueView == "favorites" then
     view = "favorites"
   elseif playQueueView == "custom" then
@@ -1620,13 +1886,22 @@ renderMiniPlayer = function()
   if playingUuid == nil then
     return nil
   end
+  panel.setNeedsFrameTick(true)
   local thumb = thumbs[playingUuid]
   local parts = {}
   table.insert(parts, ui.glyph({ name = "volume-2", size = 11, color = "primary" }))
   if thumb ~= nil then
     table.insert(parts, ui.image({ path = thumb, width = 22, height = 22, radius = 4 }))
   end
-  table.insert(parts, ui.label({ text = playingName, fontSize = 11, maxLines = 1, flexGrow = 1 }))
+  local now = noctalia.nowMs() / 1000
+  local wave = (math.sin(now / 0.8 * math.pi) + 1) / 2
+  local alpha = math.floor((0.20 + 0.80 * wave) * 255)
+  local liveColor = LIVE_GREEN .. string.format("%02x", alpha)
+  local nameColor = "on_surface"
+  table.insert(parts, ui.row({ gap = 4, align = "center", flexGrow = 1, minWidth = 0 }, {
+    ui.label({ text = playingName, fontSize = 11, maxLines = 1, color = nameColor }),
+    ui.glyph({ name = "access-point", size = 12, color = liveColor }),
+  }))
   local hasQueue = (playQueue ~= nil and #playQueue > 1)
   table.insert(parts, ui.button({
     glyph       = "player-skip-back",
@@ -1735,6 +2010,10 @@ render = function()
     body = renderGlobalSearch()
   elseif view == "country_search" then
     body = renderCountrySearch()
+  elseif view == "all_stations" then
+    body = renderAllStations()
+  elseif view == "all_countries" then
+    body = renderAllCountries()
   else
     body = renderDashboard()
   end
@@ -1762,7 +2041,10 @@ function onOpen(_context)
     stats = cachedStats
   end
   view = "dashboard"
+  query = ""
+  queryKey = queryKey + 1
   hoveredKey = nil
+  beginStatsPulse()
   render()
   fetchCountries()
 end
@@ -1783,15 +2065,22 @@ function onBack()
     globalDone = false
     globalErr = false
     globalLoading = false
-  elseif view == "country_search" then
-    view = "dashboard"
-    query = ""
-    queryKey = queryKey + 1
   else
     view = "dashboard"
   end
+  if view == "dashboard" then
+    query = ""
+    queryKey = queryKey + 1
+    beginStatsPulse()
+  end
   stations = nil
   genreStations = nil
+  allStations = nil
+  allOffset = 0
+  allDone = false
+  allErr = false
+  allLoading = false
+  allCountryShown = COUNTRIES_PAGE
   errorMessage = ""
   hoveredKey = nil
   render()
@@ -1901,13 +2190,26 @@ function onLoadMoreGenre()
   end
 end
 
+function onLoadMoreAllStations()
+  if allOffset > 0 then
+    fetchAllStations(allOffset)
+  end
+end
+
 function onFrameTick(_deltaMs)
   if favAnimUuid ~= nil then
     local elapsed = os.clock() * 1000 - favAnimStart
     if elapsed >= FAV_ANIM_MS then
       favAnimUuid = nil
-      panel.setNeedsFrameTick(false)
     end
+  end
+  if pulseStart >= 0 and view ~= "dashboard" then
+    pulseStart = -1
+  end
+  if favAnimUuid == nil and playingUuid == nil and pulseStart < 0 then
+    panel.setNeedsFrameTick(false)
+  end
+  if favAnimUuid ~= nil or playingUuid ~= nil or pulseStart >= 0 then
     render()
   end
 end
