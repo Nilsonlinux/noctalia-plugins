@@ -1349,9 +1349,9 @@ local function stationRow(s, sourceView)
     paddingH = 6,
     paddingV = 1,
     radius  = 6,
-    fill        = "surface_variant/0.4",
-    border      = "outline",
-    borderWidth = isHovered and 1 or 0,
+    fill        = isPlaying and "primary/0.12" or "surface_variant/0.4",
+    border      = isPlaying and "primary/0.3" or "outline",
+    borderWidth = (isHovered or isPlaying) and 1 or 0,
     onHover = function(isHovering)
       hoveredKey = isHovering and key or nil
       render()
@@ -1711,9 +1711,9 @@ local function customRow(s, index)
     paddingH = 6,
     paddingV = 1,
     radius  = 6,
-    fill        = "surface_variant/0.4",
-    border      = "outline",
-    borderWidth = isHovered and 1 or 0,
+    fill        = isPlaying and "primary/0.12" or "surface_variant/0.4",
+    border      = isPlaying and "primary/0.3" or "outline",
+    borderWidth = (isHovered or isPlaying) and 1 or 0,
     onHover = function(isHovering)
       hoveredKey = isHovering and key or nil
       render()
@@ -1838,6 +1838,22 @@ local function playRandomStation()
   playStation(playQueue[idx], playQueueView)
 end
 
+local function pinPlaying(list)
+  if list == nil or playingUuid == nil then
+    return
+  end
+  for i = 1, #list do
+    if list[i].uuid == playingUuid then
+      if i > 1 then
+        local s = list[i]
+        table.remove(list, i)
+        table.insert(list, 1, s)
+      end
+      return
+    end
+  end
+end
+
 local function gotoPlayingStation()
   if playingUuid == nil or playQueueView == nil then
     return
@@ -1851,6 +1867,9 @@ local function gotoPlayingStation()
       stationsDone = playQueueDone
       stationsOffset = playQueueOffset
     end
+    stationQuery = ""
+    stationQueryKey = stationQueryKey + 1
+    pinPlaying(stations)
   elseif playQueueView == "genre" and selectedGenre ~= nil then
     view = "genre"
     if genreStations == nil then
@@ -1858,6 +1877,9 @@ local function gotoPlayingStation()
       genreDone = playQueueDone
       genreOffset = playQueueOffset
     end
+    genreQuery = ""
+    genreQueryKey = genreQueryKey + 1
+    pinPlaying(genreStations)
   elseif playQueueView == "search" then
     view = "search"
     if globalResults == nil then
@@ -1865,6 +1887,7 @@ local function gotoPlayingStation()
       globalDone = playQueueDone
       globalOffset = playQueueOffset
     end
+    pinPlaying(globalResults)
   elseif playQueueView == "all_stations" then
     view = "all_stations"
     if allStations == nil then
@@ -1872,10 +1895,13 @@ local function gotoPlayingStation()
       allDone = playQueueDone
       allOffset = playQueueOffset
     end
+    pinPlaying(allStations)
   elseif playQueueView == "favorites" then
     view = "favorites"
+    pinPlaying(favorites)
   elseif playQueueView == "custom" then
     view = "custom"
+    pinPlaying(customStations)
   else
     return
   end
