@@ -1,0 +1,27 @@
+name: Test PAGES_REPO_TOKEN
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch sync-plugins using the secret
+        run: |
+          code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.PAGES_REPO_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"event_type":"sync-plugins"}' \
+            https://api.github.com/repos/Nilsonlinux/nilsonlinux.github.io/dispatches)
+          echo "HTTP_STATUS=$code"
+          echo "BODY:"
+          cat /tmp/resp.json
+          echo
+          if [ "$code" -ne 204 ]; then
+            echo "PAGES_REPO_TOKEN INVALID (expected HTTP 204)"
+            exit 1
+          fi
+          echo "PAGES_REPO_TOKEN OK"
