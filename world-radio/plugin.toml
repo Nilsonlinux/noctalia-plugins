@@ -5,8 +5,8 @@ plugin_api  = 24
 author      = "Nilsonlinux"
 license     = "MIT"
 icon        = "radio"
-description = "Browse thousands of radio stations from around the world with country flags, play them from a dashboard panel."
-tags        = ["media", "utility", "music", "panel", "bar"]
+description = "Browse thousands of radio stations from around the world with country flags."
+tags        = ["music", "utility", "panel", "bar"]
 dependencies = ["mpv"]
 
 # ---------------------------------------------------------------------------

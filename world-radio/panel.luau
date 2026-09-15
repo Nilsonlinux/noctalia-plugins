@@ -33,6 +33,58 @@ local GENRES = {
   { name = "Alternative", icon = "refresh",   tag = "alternative" },
 }
 
+local DECADES = {
+  { name = "50s",   icon = "disc", tag = "50s",   kind = "decade" },
+  { name = "60s",   icon = "disc", tag = "60s",   kind = "decade" },
+  { name = "70s",   icon = "disc", tag = "70s",   kind = "decade" },
+  { name = "80s",   icon = "disc", tag = "80s",   kind = "decade" },
+  { name = "90s",   icon = "disc", tag = "90s",   kind = "decade" },
+  { name = "2000s", icon = "disc", tag = "2000s", kind = "decade" },
+  { name = "2010s", icon = "disc", tag = "2010s", kind = "decade" },
+  { name = "2020s", icon = "disc", tag = "2020s", kind = "decade" },
+}
+
+local playingStation = nil
+
+local DECADE_ALIASES = {
+  ["50s"]   = { "50s", "1950s", "50" },
+  ["60s"]   = { "60s", "1960s", "60" },
+  ["70s"]   = { "70s", "1970s", "70" },
+  ["80s"]   = { "80s", "1980s", "80" },
+  ["90s"]   = { "90s", "1990s", "90" },
+  ["2000s"] = { "2000s", "00s", "2000" },
+  ["2010s"] = { "2010s", "10s", "2010" },
+  ["2020s"] = { "2020s", "20s", "2020" },
+}
+
+local function normalizeTag(s)
+  return tostring(s or ""):lower():gsub("[^%w]", "")
+end
+
+local function stationMatchesChip(station, tag, isDecade)
+  if station == nil or station.tags == nil then
+    return false
+  end
+  for part in tostring(station.tags):gmatch("[^,;&%|/]+") do
+    local t = normalizeTag(part)
+    if t ~= "" then
+      if isDecade then
+        local aliases = DECADE_ALIASES[tag]
+        if aliases ~= nil then
+          for _, a in ipairs(aliases) do
+            if t == normalizeTag(a) then
+              return true
+            end
+          end
+        end
+      elseif t == normalizeTag(tag) then
+        return true
+      end
+    end
+  end
+  return false
+end
+
 local dataDir
 local function getDataDir()
   if dataDir == nil then
@@ -68,9 +120,19 @@ local genreErr = false
 local genreQuery = ""
 local genreQueryKey = 0
 local selectedGenre = nil
+
+local function chipActive(g)
+  if selectedGenre ~= nil and selectedGenre.tag == g.tag then
+    return true
+  end
+  return stationMatchesChip(playingStation, g.tag, g.kind == "decade")
+end
+
 local genreLoading = false
 
 local countriesExpanded = false
+local genresExpanded = false
+local decadesExpanded = false
 
 local globalSearch = ""
 local globalSearchKey = 0
@@ -87,6 +149,10 @@ local errorMessage = ""
 local playingUuid = nil
 local playingName = ""
 local playingUrl = ""
+local playQueue = nil
+local playQueueView = nil
+local playQueueDone = true
+local playQueueOffset = 0
 local favorites = {}
 local thumbs = {}
 local thumbPending = {}
@@ -107,6 +173,12 @@ local renderCustom
 local renderAddCustom
 local renderMiniPlayer
 local renderGlobalSearch
+local renderCountrySearch
+
+local savePlayingState
+local clearPlayingState
+local playerAlive
+local restorePlayingState
 
 local function tr(key, subst)
   if subst == nil then
@@ -137,7 +209,7 @@ do
 end
 
 local function flagEmoji(code)
-  code = code or ""
+  code = tostring(code or ""):upper()
   local e1, e2 = FLAG_EMOJIS[code:sub(1, 1)], FLAG_EMOJIS[code:sub(2, 2)]
   if e1 == nil or e2 == nil then
     return ""
@@ -212,6 +284,32 @@ local function fetchStats()
   end)
 end
 
+local function sanitizeCountries(rawList)
+  if type(rawList) ~= "table" then
+    return nil
+  end
+  local list = {}
+  local byIso = {}
+  for _, c in ipairs(rawList) do
+    local name = tostring(c.name or "")
+    local iso = tostring(c.iso or ""):upper()
+    local count = tonumber(c.count) or 0
+    if name ~= "" and iso ~= "" then
+      local prev = byIso[iso]
+      if prev == nil then
+        prev = { name = name, iso = iso, count = count }
+        byIso[iso] = prev
+        table.insert(list, prev)
+      elseif count > prev.count then
+        prev.count = count
+        prev.name = name
+      end
+    end
+  end
+  table.sort(list, function(a, b) return a.count > b.count end)
+  return list
+end
+
 local function fetchCountries()
   loading = true
   errorMessage = ""
@@ -226,15 +324,21 @@ local function fetchCountries()
       return
     end
     local list = {}
+    local byIso = {}
     for _, c in ipairs(data) do
       local name = tostring(c.name or c.country or "")
       local iso = tostring(c.iso_3166_1 or c.countrycode or "")
       if name ~= "" and iso ~= "" then
-        table.insert(list, {
-          name = name,
-          iso = iso,
-          count = tonumber(c.stationcount) or 0,
-        })
+        local prev = byIso[iso]
+        local count = tonumber(c.stationcount) or 0
+        if prev == nil then
+          prev = { name = name, iso = iso, count = count }
+          byIso[iso] = prev
+          table.insert(list, prev)
+        elseif count > prev.count then
+          prev.count = count
+          prev.name = name
+        end
       end
     end
     table.sort(list, function(a, b) return a.count > b.count end)
@@ -276,6 +380,7 @@ local function fetchStations(offset)
           codec = tostring(s.codec or ""),
           bitrate = tonumber(s.bitrate) or 0,
           votes = tonumber(s.votes) or 0,
+          tags = tostring(s.tags or ""),
         })
       end
     end
@@ -316,6 +421,7 @@ local function fetchGenreStations(offset)
           codec = tostring(s.codec or ""),
           bitrate = tonumber(s.bitrate) or 0,
           votes = tonumber(s.votes) or 0,
+          tags = tostring(s.tags or ""),
         })
       end
     end
@@ -356,6 +462,7 @@ local function fetchGlobalSearch(offset)
           codec = tostring(s.codec or ""),
           bitrate = tonumber(s.bitrate) or 0,
           votes = tonumber(s.votes) or 0,
+          tags = tostring(s.tags or ""),
         })
       end
     end
@@ -410,6 +517,10 @@ local function stopPlayback()
   playingUuid = nil
   playingName = ""
   playingUrl = ""
+  playingStation = nil
+  playQueue = nil
+  playQueueView = nil
+  clearPlayingState()
   publishPlaying()
   noctalia.runAsync("kill $(cat " .. shellQuote(getDataDir() .. "/player.pid") .. " 2>/dev/null) 2>/dev/null")
   render()
@@ -462,13 +573,127 @@ local function loadFavicon(station)
   ensureFavicon(station, function() end)
 end
 
-local function playStation(station)
+local playingPath = function()
+  return getDataDir() .. "/playing.json"
+end
+
+savePlayingState = function()
+  if playingUuid == nil then
+    return
+  end
+  local ok, encoded = pcall(noctalia.json.encode, {
+    station = playingStation,
+    queue = playQueue,
+    queueView = playQueueView,
+    queueDone = playQueueDone,
+    queueOffset = playQueueOffset,
+  })
+  if ok and encoded ~= nil then
+    noctalia.writeFile(playingPath(), encoded)
+  end
+end
+
+clearPlayingState = function()
+  noctalia.removeFile(playingPath())
+end
+
+playerAlive = function()
+  local raw = noctalia.readFile(getDataDir() .. "/player.pid")
+  local pid = tonumber((tostring(raw or ""):match("%d+")))
+  if pid == nil or pid <= 0 then
+    return false
+  end
+  return noctalia.fileExists("/proc/" .. tostring(pid))
+end
+
+restorePlayingState = function()
+  if playingUuid ~= nil then
+    return
+  end
+  if not playerAlive() then
+    clearPlayingState()
+    return
+  end
+  local raw = noctalia.readFile(playingPath())
+  if raw == nil then
+    return
+  end
+  local ok, val = pcall(noctalia.json.decode, raw)
+  if not ok or type(val) ~= "table" or type(val.station) ~= "table" then
+    return
+  end
+  local st = val.station
+  if type(st.uuid) ~= "string" or type(st.url) ~= "string" then
+    return
+  end
+  playingUuid = st.uuid
+  playingName = tostring(st.name or "")
+  playingUrl = st.url
+  playingStation = st
+  if type(val.queue) == "table" then
+    playQueue = val.queue
+  end
+  playQueueView = val.queueView
+  playQueueDone = not not val.queueDone
+  playQueueOffset = tonumber(val.queueOffset) or 0
+  if type(st.favicon) == "string" and st.favicon ~= "" then
+    ensureFavicon(st, function(dest)
+      if dest ~= nil then
+        thumbs[st.uuid] = dest
+      end
+      render()
+    end)
+  end
+  publishPlaying()
+end
+
+local function viewList(v)
+  if v == "country" then
+    return stations
+  elseif v == "genre" then
+    return genreStations
+  elseif v == "favorites" then
+    return favorites
+  elseif v == "custom" then
+    return customStations
+  elseif v == "search" then
+    return globalResults
+  end
+  return nil
+end
+
+local function playStation(station, sourceView)
   local pidFile = getDataDir() .. "/player.pid"
   playingUuid = station.uuid
   playingName = station.name
   playingUrl = station.url
+  playingStation = station
   publishPlaying()
+  if sourceView ~= nil then
+    local src = viewList(sourceView)
+    if src ~= nil and #src > 0 then
+      playQueue = {}
+      for i = 1, #src do
+        playQueue[i] = src[i]
+      end
+      playQueueView = sourceView
+      if sourceView == "country" then
+        playQueueDone = stationsDone
+        playQueueOffset = stationsOffset
+      elseif sourceView == "genre" then
+        playQueueDone = genreDone
+        playQueueOffset = genreOffset
+      elseif sourceView == "search" then
+        playQueueDone = globalDone
+        playQueueOffset = globalOffset
+      else
+        playQueueDone = true
+        playQueueOffset = #src
+      end
+    end
+  end
   render()
+  savePlayingState()
   local cover = nil
   if playerName == "mpv" then
     local dest = faviconDest(station)
@@ -631,7 +856,7 @@ local function centeredLabel(text, color)
 end
 
 local function countryCard(c)
-  local key = "country-" .. c.iso
+  local key = "country-card-" .. c.iso
   local flag = flagEmoji(c.iso)
   local flagInner = (flag ~= "")
     and ui.label({ text = flag, fontSize = 14 })
@@ -661,7 +886,7 @@ local function countryCard(c)
 end
 
 local function countryRow(c)
-  local key = "country-" .. c.iso
+  local key = "country-row-" .. c.iso
   local flag = flagEmoji(c.iso)
   local flagInner = (flag ~= "")
     and ui.label({ text = flag, fontSize = 12 })
@@ -693,7 +918,7 @@ end
 
 local function genreChip(g)
   local key = "genre-" .. g.tag
-  local isActive = (selectedGenre and selectedGenre.tag == g.tag)
+  local isActive = chipActive(g)
   local isHovered = (hoveredKey == key)
   return ui.row({
     key     = key,
@@ -743,11 +968,12 @@ renderDashboard = function()
   }))
 
   table.insert(children, ui.input({
-    key         = "country-search-" .. queryKey,
-    value       = query,
+    key         = "global-search-" .. globalSearchKey,
+    value       = globalSearch,
     controlSize = "sm",
-    placeholder = tr("panel.search_countries_placeholder"),
-    onChange    = "onSearchCountries",
+    focused     = true,
+    placeholder = tr("panel.search_global_placeholder"),
+    onChange    = "onDashboardSearchRadio",
   }))
 
   local scrollChildren = {}
@@ -760,16 +986,61 @@ renderDashboard = function()
     local q = noctalia.string.trim(query):lower()
 
     if q == "" then
-      table.insert(scrollChildren, ui.label({ text = tr("panel.genres_title"), fontSize = 11, fontWeight = "bold", color = "outline" }))
-      local chipRows = {}
-      for i = 1, #GENRES, 5 do
-        local row = {}
-        for j = i, math.min(i + 4, #GENRES) do
-          table.insert(row, genreChip(GENRES[j]))
+      table.insert(scrollChildren, ui.row({
+        key         = "genres-toggle",
+        gap         = 6,
+        align       = "center",
+        paddingH    = 8,
+        paddingV    = 6,
+        radius      = 7,
+        fill        = "surface_variant/0.5",
+        onClick     = function()
+          genresExpanded = not genresExpanded
+          render()
+        end,
+      }, {
+        ui.label({ text = tr("panel.genres_title"), fontSize = 12, fontWeight = "bold", flexGrow = 1 }),
+        ui.glyph({ name = genresExpanded and "chevron-up" or "chevron-down", size = 14, color = "outline" }),
+      }))
+      if genresExpanded then
+        local chipRows = {}
+        for i = 1, #GENRES, 7 do
+          local row = {}
+          for j = i, math.min(i + 6, #GENRES) do
+            table.insert(row, genreChip(GENRES[j]))
+          end
+          table.insert(chipRows, ui.row({ gap = 6, align = "center" }, row))
         end
-        table.insert(chipRows, ui.row({ gap = 6, align = "center" }, row))
+        table.insert(scrollChildren, ui.column({ gap = 6 }, chipRows))
       end
-      table.insert(scrollChildren, ui.column({ gap = 6 }, chipRows))
+
+      table.insert(scrollChildren, ui.row({
+        key         = "decades-toggle",
+        gap         = 6,
+        align       = "center",
+        paddingH    = 8,
+        paddingV    = 6,
+        radius      = 7,
+        fill        = "surface_variant/0.5",
+        onClick     = function()
+          decadesExpanded = not decadesExpanded
+          render()
+        end,
+      }, {
+        ui.label({ text = tr("panel.decades_title"), fontSize = 12, fontWeight = "bold", flexGrow = 1 }),
+        ui.glyph({ name = decadesExpanded and "chevron-up" or "chevron-down", size = 14, color = "outline" }),
+      }))
+      if decadesExpanded then
+        local decadeRows = {}
+        for i = 1, #DECADES, 7 do
+          local row = {}
+          for j = i, math.min(i + 6, #DECADES) do
+            table.insert(row, genreChip(DECADES[j]))
+          end
+          table.insert(decadeRows, ui.row({ gap = 6, align = "center" }, row))
+        end
+        table.insert(scrollChildren, ui.column({ gap = 6 }, decadeRows))
+      end
 
       if #countries > 0 then
         table.insert(scrollChildren, ui.separator({}))
@@ -836,7 +1107,7 @@ renderDashboard = function()
   return children
 end
 
-local function stationRow(s)
+local function stationRow(s, sourceView)
   loadFavicon(s)
   local isPlaying = playingUuid == s.uuid
   local thumb = thumbs[s.uuid]
@@ -890,7 +1161,7 @@ local function stationRow(s)
       if isPlaying then
         stopPlayback()
       else
-        playStation(s)
+        playStation(s, sourceView)
       end
     end,
   }))
@@ -952,7 +1223,7 @@ renderCountry = function()
     else
       local rows = {}
       for _, s in ipairs(visible) do
-        table.insert(rows, stationRow(s))
+        table.insert(rows, stationRow(s, "country"))
       end
       table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
       if not stationsDone then
@@ -980,7 +1251,7 @@ renderGenre = function()
       genreIcon,
       ui.column({ flexGrow = 1, gap = 0 }, {
         ui.label({ text = selectedGenre.name, fontSize = 15, fontWeight = "bold", maxLines = 1 }),
-        ui.label({ text = tr("panel.genre_stations"), fontSize = 11, color = "outline" }),
+        ui.label({ text = tr(selectedGenre.kind == "decade" and "panel.decade_stations" or "panel.genre_stations"), fontSize = 11, color = "outline" }),
       }),
     }))
   end
@@ -1011,7 +1282,7 @@ renderGenre = function()
     else
       local rows = {}
       for _, s in ipairs(visible) do
-        table.insert(rows, stationRow(s))
+        table.insert(rows, stationRow(s, "genre"))
       end
       table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
       if not genreDone then
@@ -1060,11 +1331,11 @@ renderGlobalSearch = function()
     table.insert(children, centeredLabel(tr("panel.search_no_results")))
   else
     local rows = {}
-    for _, s in ipairs(globalResults) do
-      table.insert(rows, stationRow(s))
-    end
-    table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
-    if not globalDone then
+for _, s in ipairs(globalResults) do
+        table.insert(rows, stationRow(s, "search"))
+      end
+      table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
+      if not globalDone then
       table.insert(children, ui.button({
         text         = tr("panel.load_more"),
         variant      = "secondary",
@@ -1075,6 +1346,48 @@ renderGlobalSearch = function()
       }))
     end
   end
+
+  return children
+end
+
+renderCountrySearch = function()
+  local children = {}
+
+  table.insert(children, ui.input({
+    key         = "country-search-" .. queryKey,
+    value       = query,
+    controlSize = "md",
+    focused     = true,
+    placeholder = tr("panel.search_countries_placeholder"),
+    onChange    = "onSearchCountries",
+  }))
+
+  local scrollChildren = {}
+  if countries == nil and errorMessage ~= "" then
+    table.insert(scrollChildren, centeredLabel(errorMessage, "on_surface/0.6"))
+  elseif countries == nil and loading then
+    table.insert(scrollChildren, ui.column({ flexGrow = 1, align = "center", justify = "center", padding = 24 }, { spinnerRow() }))
+  elseif countries ~= nil then
+    local q = noctalia.string.trim(query):lower()
+    if q == "" then
+      table.insert(scrollChildren, centeredLabel(tr("panel.search_countries_hint"), "outline"))
+    else
+      local matches = {}
+      for _, c in ipairs(countries) do
+        if c.name:lower():find(q, 1, true) ~= nil then
+          table.insert(matches, c)
+        end
+      end
+      if #matches == 0 then
+        table.insert(scrollChildren, centeredLabel(tr("panel.countries_empty")))
+      else
+        for _, c in ipairs(matches) do
+          table.insert(scrollChildren, countryRow(c))
+        end
+      end
+    end
+  end
+  table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, scrollChildren))
 
   return children
 end
@@ -1095,7 +1408,7 @@ renderFavorites = function()
   else
     local rows = {}
     for _, s in ipairs(favorites) do
-      table.insert(rows, stationRow(s))
+      table.insert(rows, stationRow(s, "favorites"))
     end
     table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
   end
@@ -1128,7 +1441,7 @@ local function customRow(s, index)
       if isPlaying then
         stopPlayback()
       else
-        playStation(s)
+        playStation(s, "custom")
       end
     end,
   }))
@@ -1230,6 +1543,79 @@ renderAddCustom = function()
   return children
 end
 
+local function queueIndex()
+  if playQueue == nil or playingUuid == nil then
+    return 0
+  end
+  for i, s in ipairs(playQueue) do
+    if s.uuid == playingUuid then
+      return i
+    end
+  end
+  return 0
+end
+
+local function skipPlaying(dir)
+  local n = playQueue and #playQueue or 0
+  if n < 2 then
+    return
+  end
+  local idx = queueIndex()
+  if idx == 0 then
+    return
+  end
+  playStation(playQueue[((idx - 1 + dir) % n) + 1], playQueueView)
+end
+
+local function playRandomStation()
+  local n = playQueue and #playQueue or 0
+  if n == 0 then
+    return
+  end
+  local idx = math.random(1, n)
+  if n > 1 and playQueue[idx].uuid == playingUuid then
+    idx = idx % n + 1
+  end
+  playStation(playQueue[idx], playQueueView)
+end
+
+local function gotoPlayingStation()
+  if playingUuid == nil or playQueueView == nil then
+    return
+  end
+  errorMessage = ""
+  hoveredKey = nil
+  if playQueueView == "country" and selectedCode ~= nil then
+    view = "country"
+    if stations == nil then
+      stations = playQueue
+      stationsDone = playQueueDone
+      stationsOffset = playQueueOffset
+    end
+  elseif playQueueView == "genre" and selectedGenre ~= nil then
+    view = "genre"
+    if genreStations == nil then
+      genreStations = playQueue
+      genreDone = playQueueDone
+      genreOffset = playQueueOffset
+    end
+  elseif playQueueView == "search" then
+    view = "search"
+    if globalResults == nil then
+      globalResults = playQueue
+      globalDone = playQueueDone
+      globalOffset = playQueueOffset
+    end
+  elseif playQueueView == "favorites" then
+    view = "favorites"
+  elseif playQueueView == "custom" then
+    view = "custom"
+  else
+    return
+  end
+  render()
+end
+
 renderMiniPlayer = function()
   if playingUuid == nil then
     return nil
@@ -1241,6 +1627,39 @@ renderMiniPlayer = function()
     table.insert(parts, ui.image({ path = thumb, width = 22, height = 22, radius = 4 }))
   end
   table.insert(parts, ui.label({ text = playingName, fontSize = 11, maxLines = 1, flexGrow = 1 }))
+  local hasQueue = (playQueue ~= nil and #playQueue > 1)
+  table.insert(parts, ui.button({
+    glyph       = "player-skip-back",
+    variant     = "ghost",
+    controlSize = "sm",
+    tooltip     = tr("panel.prev_tooltip"),
+    enabled     = hasQueue,
+    onClick     = function() skipPlaying(-1) end,
+  }))
+  table.insert(parts, ui.button({
+    glyph       = "dice",
+    variant     = "ghost",
+    controlSize = "sm",
+    tooltip     = tr("panel.random_tooltip"),
+    enabled     = hasQueue,
+    onClick     = playRandomStation,
+  }))
+  table.insert(parts, ui.button({
+    glyph       = "player-skip-forward",
+    variant     = "ghost",
+    controlSize = "sm",
+    tooltip     = tr("panel.next_tooltip"),
+    enabled     = hasQueue,
+    onClick     = function() skipPlaying(1) end,
+  }))
+  table.insert(parts, ui.button({
+    glyph       = "playlist",
+    variant     = "ghost",
+    controlSize = "sm",
+    tooltip     = tr("panel.goto_list_tooltip"),
+    enabled     = (playQueue ~= nil),
+    onClick     = gotoPlayingStation,
+  }))
   table.insert(parts, ui.button({
     glyph       = "square",
     variant     = "primary",
@@ -1280,8 +1699,8 @@ render = function()
     glyph       = "search",
     variant     = "ghost",
     controlSize = "md",
-    tooltip     = tr("panel.search_title"),
-    onClick     = "onOpenGlobalSearch",
+    tooltip     = tr("panel.search_countries_placeholder"),
+    onClick     = "onOpenCountrySearch",
   }))
   table.insert(headerParts, ui.button({
     glyph       = (#favorites > 0) and "star-filled" or "star",
@@ -1314,6 +1733,8 @@ render = function()
     body = renderAddCustom()
   elseif view == "search" then
     body = renderGlobalSearch()
+  elseif view == "country_search" then
+    body = renderCountrySearch()
   else
     body = renderDashboard()
   end
@@ -1327,13 +1748,14 @@ render = function()
     table.insert(children, mini)
   end
 
-  panel.render(ui.column({ gap = 8, padding = 12, flexGrow = 1, align = "stretch" }, children))
+  panel.render(ui.column({ key = "root-" .. view, gap = 8, padding = 12, flexGrow = 1, align = "stretch" }, children))
 end
 
 function onOpen(_context)
+  restorePlayingState()
   local cachedCountries = readCachedJson("countries.json", COUNTRIES_CACHE_AGE)
   if cachedCountries ~= nil then
-    countries = cachedCountries
+    countries = sanitizeCountries(cachedCountries)
   end
   local cachedStats = readCachedJson("stats.json", COUNTRIES_CACHE_AGE)
   if cachedStats ~= nil then
@@ -1361,6 +1783,10 @@ function onBack()
     globalDone = false
     globalErr = false
     globalLoading = false
+  elseif view == "country_search" then
+    view = "dashboard"
+    query = ""
+    queryKey = queryKey + 1
   else
     view = "dashboard"
   end
@@ -1414,6 +1840,30 @@ function onOpenGlobalSearch()
   globalLoading = false
   globalSearchNonce = globalSearchNonce + 1
   render()
+end
+
+function onOpenCountrySearch()
+  view = "country_search"
+  errorMessage = ""
+  query = ""
+  queryKey = queryKey + 1
+  render()
+end
+
+function onDashboardSearchRadio(value)
+  view = "search"
+  globalSearch = value or ""
+  globalSearchKey = globalSearchKey + 1
+  globalResults = nil
+  globalOffset = 0
+  globalDone = false
+  globalErr = false
+  globalLoading = false
+  globalSearchNonce = globalSearchNonce + 1
+  render()
+  noctalia.runAsync(string.format("sleep %.3f", SEARCH_DEBOUNCE_MS / 1000), function()
+    fetchGlobalSearch(0)
+  end)
 end
 
 function onGlobalSearchChanged(value)

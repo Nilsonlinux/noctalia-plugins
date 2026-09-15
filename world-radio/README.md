@@ -67,6 +67,11 @@ noctalia msg panel-toggle nilsonlinux/world-radio:Panel
 
 - `mpv` (the plugin's declared dependency). When only `ffplay` is available,
   playback falls back to it (`-nodisp -loglevel quiet -autoexit -volume 85`).
+- `mpv-mpris` - required for the station's logo to show in Noctalia's media
+  widget/tab. mpv only embeds the cover via `--cover-art-files`; `mpv-mpris` is
+  what publishes it as `mpris:artUrl` through MPRIS, and Noctalia reads the
+  artwork from exactly that property. Without it, Noctalia sees no MPRIS
+  player at all, so no now-playing info and no artwork.
 - The panel only works while a network connection is available to reach
   `radio-browser.info`.
 
@@ -101,6 +106,10 @@ noctalia msg panel-toggle nilsonlinux/world-radio:Panel
   driven from the panel, so nothing runs while the panel is closed.
 - `countries.json`, `stats.json`, `thumbs/` and `player.pid` are runtime data
   and can be safely deleted to force a refresh.
+- While a station plays, the mini player state is persisted to `playing.json`.
+  If the plugin reloads (for example after toggling another plugin in
+  Settings), the panel restores the mini player on next open as long as the
+  player process is still alive; deleting `playing.json` clears it.
 - Station logos sometimes fail to download (some favicons return 403/404) -
   playback is never blocked by that; the station just plays without artwork.
 
