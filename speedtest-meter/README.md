@@ -20,8 +20,10 @@ The panel shows a visual speedometer during the test and displays full
 technical results upon completion. The speedometer is a circular dial
 (with needle, tick marks and a colored progress arc) rendered live while
 the test runs, using the same ring-gauge drawing core as the official
-Noctalia "processes" plugin. If `python3`/`Pillow` are unavailable it
-gracefully falls back to the simple circular display.
+Noctalia "processes" plugin. The needle and arc sweep smoothly (eased,
+speedtest.net-style) toward the current speed and the tick marks light up
+as it passes. If `python3`/`Pillow` are unavailable it gracefully falls
+back to the simple circular display.
 
 ## Plugin
 
@@ -103,11 +105,12 @@ automatically.
   `scripts/draw_graph.py`) - when available, redraws the two speedometer
   dials live while a test runs, using the same ring-gauge drawing core as
   the official "processes" plugin. The worker reads a tiny JSON snapshot
-  that the panel writes with the current speeds and regenerates the dial
-  PNGs only when the value changes. If it cannot start (no `python3` or
-  `Pillow`), the plugin falls back to the plain circular display and keeps
-  working normally; nothing is sent over the network besides the usual
-  speedtest/ipapi requests.  
+  that the panel writes with the current speeds; the needle sweeps toward
+  the target with easing (speedtest.net style), the tick marks light up as
+  it passes, and re-rendering stops once the value settles. If it cannot
+  start (no `python3` or `Pillow`), the plugin falls back to the plain
+  circular display and keeps working normally; nothing is sent over the
+  network besides the usual speedtest/ipapi requests.  
 
 ## Legacy `speedtest-cli` behavior
 

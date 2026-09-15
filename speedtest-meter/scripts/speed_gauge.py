@@ -2,11 +2,14 @@
 # Live speedometer worker for the Speedtest Meter panel.
 #
 # The Lua panel writes its live download/upload values to a small JSON file
-# (first CLI arg). This worker polls that file and, whenever the values
-# change, redraws the two speedometer dials (download/upload) with Pillow
-# using draw_graph.draw_speedometer() — the same ring-arc rendering core used
-# by the "processes" plugin. It reports every freshly written image to the
-# panel over stdout so it can refresh the ui.image controls.
+# (first CLI arg). This worker polls that file and animates the two dials
+# (download/upload) the way speedtest.net does: instead of jumping straight
+# to the latest measurement, the needle/arc/tick-trail sweeps smoothly toward
+# it (eased), and the center number counts up alongside the needle. Frames
+# are only re-rendered while the dial is actually moving, and every re-render
+# is reported to the panel over stdout with the same `ready` protocol so it
+# refreshes the ui.image controls. It uses draw_graph.draw_speedometer() — the
+# same ring-arc rendering core as the "processes" plugin.
 #
 # Args: <live_json_path> <download_png_path> <upload_png_path> <skin>
 
@@ -27,6 +30,19 @@ SKIN = sys.argv[4] if len(sys.argv) > 4 else "dark"
 
 PID = os.getpid()
 FILES = [p for p in (LIVE_FILE, DOWN_FILE, UP_FILE) if p]
+
+# Poll fast enough for a fluid sweep (up to ~16 frames/s), but each frame
+# only redraws the dial(s) that actually moved.
+POLL_INTERVAL = 0.06
+# Per-poll easing toward the target: 0.42 (≈95% of the gap closed in ~0.5 s),
+# the same feel as speedtest.net's needle sweep.
+EASE = 0.42
+# Below this gap the value is considered settled and snaps to the target, so
+# a measured number keeps displaying exactly and stops re-rendering.
+SETTLE_EPS = 0.35
+# A frame is only drawn when the eased value moved at least this much, so a
+# static dial costs nothing.
+DRAW_EPS = 0.30
 
 
 def cleanup():
@@ -60,21 +76,60 @@ def parse_accent(text, default):
     return default
 
 
-def make_state(data):
-    """A cheap immutable hash of the current live values, to detect changes."""
-    if not data:
+def target_percent(raw):
+    try:
+        return max(0.0, min(100.0, float(raw or 0)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def read_live():
+    try:
+        with open(LIVE_FILE, "r") as f:
+            return json.load(f)
+    except (OSError, ValueError):
         return None
-    d = data.get("download") or {}
-    u = data.get("upload") or {}
-    state = []
-    for g in (d, u):
-        state.append(round(float(g.get("percent") or 0), 1))
-        state.append(str(g.get("value_text") or ""))
-        state.append(str(g.get("unit") or ""))
-        state.append(str(g.get("label") or ""))
-        state.append(str(g.get("accent") or ""))
-    state.append(str(data.get("max_label") or ""))
-    return tuple(state)
+
+
+def draw_dial(data, kind, gauge):
+    """Redraw one dial from its eased value; returns True if a frame was drawn."""
+    src = data.get(kind) or {}
+    target = target_percent(src.get("percent"))
+    shown = gauge["shown"] + (target - gauge["shown"]) * EASE
+    if abs(target - shown) < SETTLE_EPS:
+        shown = target
+    gauge["shown"] = shown
+
+    if gauge["last_drawn"] is not None and abs(shown - gauge["last_drawn"]) < DRAW_EPS:
+        return False
+
+    value_text = str(src.get("value_text") or "0")
+    max_raw = 0.0
+    try:
+        max_raw = float(data.get("max_label") or 0)
+    except (TypeError, ValueError):
+        max_raw = 0.0
+    if max_raw > 0:
+        value_text = "%.1f" % (shown / 100.0 * max_raw)
+    default_accent = (120, 180, 255) if kind == "download" else (255, 185, 120)
+
+    try:
+        draw_speedometer(
+            percent=shown,
+            value_text=value_text,
+            unit_text=str(src.get("unit") or ""),
+            label_text=str(src.get("label") or ""),
+            max_label=str(data.get("max_label") or ""),
+            accent=parse_accent(src.get("accent"), default_accent),
+            skin_name=SKIN,
+            filename=gauge["file"],
+        )
+    except Exception as exc:  # keep looping; panel keeps its fallback
+        sys.stderr.write("speedtest-gauge:error:%s\n" % exc)
+        return False
+
+    gauge["last_drawn"] = shown
+    return True
 
 
 def main():
@@ -83,49 +138,18 @@ def main():
 
     print("speedtest-gauge:pid:%d" % PID, flush=True)
 
-    last_state = None
-    while True:
-        data = None
-        try:
-            with open(LIVE_FILE, "r") as f:
-                data = json.load(f)
-        except (OSError, ValueError):
-            data = None
+    gauges = {
+        "download": {"file": DOWN_FILE, "shown": 0.0, "last_drawn": None},
+        "upload": {"file": UP_FILE, "shown": 0.0, "last_drawn": None},
+    }
 
-        state = make_state(data)
-        if state is not None and state != last_state:
-            last_state = state
-            d = data.get("download") or {}
-            u = data.get("upload") or {}
-            down_accent = parse_accent(d.get("accent"), (120, 180, 255))
-            up_accent = parse_accent(u.get("accent"), (255, 185, 120))
-            max_label = str(data.get("max_label") or "")
-            try:
-                draw_speedometer(
-                    percent=float(d.get("percent") or 0),
-                    value_text=str(d.get("value_text") or "0"),
-                    unit_text=str(d.get("unit") or ""),
-                    label_text=str(d.get("label") or ""),
-                    max_label=max_label,
-                    accent=down_accent,
-                    skin_name=SKIN,
-                    filename=DOWN_FILE,
-                )
-                draw_speedometer(
-                    percent=float(u.get("percent") or 0),
-                    value_text=str(u.get("value_text") or "0"),
-                    unit_text=str(u.get("unit") or ""),
-                    label_text=str(u.get("label") or ""),
-                    max_label=max_label,
-                    accent=up_accent,
-                    skin_name=SKIN,
-                    filename=UP_FILE,
-                )
-                print("speedtest-gauge:ready:%s" % DOWN_FILE, flush=True)
-                print("speedtest-gauge:ready:%s" % UP_FILE, flush=True)
-            except Exception as exc:  # keep looping; panel keeps its fallback
-                sys.stderr.write("speedtest-gauge:error:%s\n" % exc)
-        time.sleep(0.15)
+    while True:
+        data = read_live()
+        if data:
+            for kind, gauge in gauges.items():
+                if draw_dial(data, kind, gauge):
+                    print("speedtest-gauge:ready:%s" % gauge["file"], flush=True)
+        time.sleep(POLL_INTERVAL)
 
 
 if __name__ == "__main__":

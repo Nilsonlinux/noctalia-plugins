@@ -541,11 +541,14 @@ maybeRefreshGauges = function()
 		return
 	end
 	local down, up, max = currentGaugeValues()
-	local downPct = math.floor(down / max * 100)
-	local upPct = math.floor(up / max * 100)
+	local downPct = math.max(0, math.min(100, down / max * 100))
+	local upPct = math.max(0, math.min(100, up / max * 100))
 	local now = noctalia.nowMs()
-	local changed = downPct ~= lastGaugeDownPct or upPct ~= lastGaugeUpPct
-	if now - lastGaugeWriteMs >= 180 and (changed or now - lastGaugeWriteMs >= 1000) then
+	-- Track the exact (non-floored) eased percentages so the animating
+	-- needle gets fed near-continuously, and settle to a slow refresh rate
+	-- (1.5 s) while the values sit still.
+	local wobble = math.abs(downPct - lastGaugeDownPct) >= 0.15 or math.abs(upPct - lastGaugeUpPct) >= 0.15
+	if now - lastGaugeWriteMs >= 60 and (wobble or now - lastGaugeWriteMs >= 1500) then
 		lastGaugeDownPct = downPct
 		lastGaugeUpPct = upPct
 		lastGaugeWriteMs = now

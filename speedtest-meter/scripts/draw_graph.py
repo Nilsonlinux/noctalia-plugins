@@ -118,7 +118,9 @@ def draw_speedometer(percent, value_text, unit_text, label_text, max_label,
         draw_capsule_arc(draw, (cx, cy), radius, thickness,
                          start_deg, start_deg + span, accent + (255,))
 
-    # Ticks along the outer edge of the dial.
+    # Ticks along the outer edge of the dial. The ones the needle has already
+    # passed light up with the accent color, fading toward the arc tip, so the
+    # gauge shows a "running light" trail while the needle sweeps.
     r_tick = radius + thickness / 2.0
     for i in range(0, 11):
         t = i / 10.0
@@ -131,7 +133,12 @@ def draw_speedometer(percent, value_text, unit_text, label_text, max_label,
         y1 = cy + r_tick * math.sin(a)
         x2 = cx + (r_tick + length) * math.cos(a)
         y2 = cy + (r_tick + length) * math.sin(a)
-        draw.line([x1, y1, x2, y2], fill=skin["muted"], width=width)
+        if pct > 0 and t <= pct:
+            fade = 1.0 - 0.6 * (t / pct)
+            color = tuple(int(max(0, min(255, c * fade))) for c in accent) + (255,)
+        else:
+            color = skin["muted"]
+        draw.line([x1, y1, x2, y2], fill=color, width=width)
 
     # Scale end numerals ("0" .. <max>) mirrored under the track ends.
     draw.text((cx - r_tick - 20 * SCALE, cy + 6 * SCALE), "0",
