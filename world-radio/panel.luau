@@ -86,6 +86,23 @@ local function stationMatchesChip(station, tag, isDecade)
   return false
 end
 
+local function chipForPlayingStation()
+  if playingStation == nil then
+    return nil
+  end
+  for _, g in ipairs(GENRES) do
+    if stationMatchesChip(playingStation, g.tag, false) then
+      return g
+    end
+  end
+  for _, d in ipairs(DECADES) do
+    if stationMatchesChip(playingStation, d.tag, true) then
+      return d
+    end
+  end
+  return nil
+end
+
 local dataDir
 local function getDataDir()
   if dataDir == nil then
@@ -162,6 +179,7 @@ local playQueue = nil
 local playQueueView = nil
 local playQueueDone = true
 local playQueueOffset = 0
+local revealNonce = 0
 local favorites = {}
 local thumbs = {}
 local thumbPending = {}
@@ -715,6 +733,9 @@ savePlayingState = function()
     queueView = playQueueView,
     queueDone = playQueueDone,
     queueOffset = playQueueOffset,
+    countryCode = selectedCode,
+    countryName = selectedName,
+    genre = selectedGenre,
   })
   if ok and encoded ~= nil then
     noctalia.writeFile(playingPath(), encoded)
@@ -764,6 +785,13 @@ restorePlayingState = function()
   playQueueView = val.queueView
   playQueueDone = not not val.queueDone
   playQueueOffset = tonumber(val.queueOffset) or 0
+  if type(val.countryCode) == "string" then
+    selectedCode = val.countryCode
+    selectedName = tostring(val.countryName or "")
+  end
+  if type(val.genre) == "table" then
+    selectedGenre = val.genre
+  end
   if type(st.favicon) == "string" and st.favicon ~= "" then
     ensureFavicon(st, function(dest)
       if dest ~= nil then
@@ -1401,7 +1429,7 @@ renderCountry = function()
       for _, s in ipairs(visible) do
         table.insert(rows, stationRow(s, "country"))
       end
-      table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
+      table.insert(children, ui.scroll({ key = "scroll-country-" .. revealNonce, gap = 2, flexGrow = 1 }, rows))
       if not stationsDone then
         table.insert(children, ui.button({
           text         = tr("panel.load_more"),
@@ -1460,7 +1488,7 @@ renderGenre = function()
       for _, s in ipairs(visible) do
         table.insert(rows, stationRow(s, "genre"))
       end
-      table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
+      table.insert(children, ui.scroll({ key = "scroll-genre-" .. revealNonce, gap = 2, flexGrow = 1 }, rows))
       if not genreDone then
         table.insert(children, ui.button({
           text         = tr("panel.load_more"),
@@ -1510,7 +1538,7 @@ renderGlobalSearch = function()
 for _, s in ipairs(globalResults) do
         table.insert(rows, stationRow(s, "search"))
       end
-      table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
+      table.insert(children, ui.scroll({ key = "scroll-search-" .. revealNonce, gap = 2, flexGrow = 1 }, rows))
       if not globalDone then
       table.insert(children, ui.button({
         text         = tr("panel.load_more"),
@@ -1591,7 +1619,7 @@ renderAllStations = function()
       for _, s in ipairs(allStations) do
         table.insert(rows, stationRow(s, "all_stations"))
       end
-      table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
+      table.insert(children, ui.scroll({ key = "scroll-allstations-" .. revealNonce, gap = 2, flexGrow = 1 }, rows))
       if not allDone then
         table.insert(children, ui.button({
           text         = tr("panel.load_more"),
@@ -1669,7 +1697,7 @@ renderFavorites = function()
     for _, s in ipairs(favorites) do
       table.insert(rows, stationRow(s, "favorites"))
     end
-    table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
+    table.insert(children, ui.scroll({ key = "scroll-favorites-" .. revealNonce, gap = 2, flexGrow = 1 }, rows))
   end
 
   return children
@@ -1749,7 +1777,7 @@ renderCustom = function()
     for i, s in ipairs(customStations) do
       table.insert(rows, customRow(s, i))
     end
-    table.insert(children, ui.scroll({ gap = 2, flexGrow = 1 }, rows))
+    table.insert(children, ui.scroll({ key = "scroll-custom-" .. revealNonce, gap = 2, flexGrow = 1 }, rows))
   end
 
   return children
@@ -1860,6 +1888,7 @@ local function gotoPlayingStation()
   end
   errorMessage = ""
   hoveredKey = nil
+  revealNonce = revealNonce + 1
   if playQueueView == "country" and selectedCode ~= nil then
     view = "country"
     if stations == nil then
@@ -1870,8 +1899,11 @@ local function gotoPlayingStation()
     stationQuery = ""
     stationQueryKey = stationQueryKey + 1
     pinPlaying(stations)
-  elseif playQueueView == "genre" and selectedGenre ~= nil then
+  elseif playQueueView == "genre" then
     view = "genre"
+    if selectedGenre == nil then
+      selectedGenre = chipForPlayingStation()
+    end
     if genreStations == nil then
       genreStations = playQueue
       genreDone = playQueueDone
@@ -1953,6 +1985,22 @@ renderMiniPlayer = function()
     enabled     = hasQueue,
     onClick     = function() skipPlaying(1) end,
   }))
+  local playingFaved = false
+  if playingStation ~= nil then
+    playingFaved = isFavorite(playingStation.uuid)
+  end
+  table.insert(parts, ui.button({
+    glyph       = playingFaved and "star-filled" or "star",
+    variant     = "ghost",
+    controlSize = "sm",
+    tooltip     = playingFaved and tr("panel.unfavorite_tooltip") or tr("panel.favorite_tooltip"),
+    enabled     = (playingStation ~= nil),
+    onClick     = function()
+      if playingStation ~= nil then
+        toggleFavorite(playingStation)
+      end
+    end,
+  }))
   table.insert(parts, ui.button({
     glyph       = "playlist",
     variant     = "ghost",
@@ -2005,14 +2053,16 @@ render = function()
   }))
   table.insert(headerParts, ui.button({
     glyph       = (#favorites > 0) and "star-filled" or "star",
-    variant     = "ghost",
+    text        = (#favorites > 0) and tostring(#favorites) or nil,
+    variant     = "outline",
     controlSize = "md",
     tooltip     = tr("panel.favorites_title"),
     onClick     = "onOpenFavorites",
   }))
   table.insert(headerParts, ui.button({
     glyph       = "broadcast",
-    variant     = "ghost",
+    text        = (#customStations > 0) and tostring(#customStations) or nil,
+    variant     = "outline",
     controlSize = "md",
     tooltip     = tr("panel.custom_title"),
     onClick     = openCustom,

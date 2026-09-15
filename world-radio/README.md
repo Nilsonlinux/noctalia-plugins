@@ -42,7 +42,7 @@ station plays, its logo appears in the media widget thanks to mpv's
   `mpris:artUrl`; Noctalia's media tab then shows the station's own logo.
 - **Now playing on the bar** - while a station plays, the bar widget shows its
   name next to the icon (configurable, see `show_now_playing`) and a tooltip
- with "Now playing: `<station>`".
+  with "Now playing: `<station>`".
 - **Two languages** - English and `pt-BR` translations.
 
 ## Requirements
