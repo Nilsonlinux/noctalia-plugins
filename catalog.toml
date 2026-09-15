@@ -25,7 +25,7 @@ tags = ["network", "indicator", "bar", "panel", "service"]
 plugin_api = 14
 version = "1.0.2"
 updated_at = 1788554504
-rev = "84529f05d4ee70297c0f5103678bf4a822c09e1b"
+rev = "79a453732029cd3fd883420ba6ed0f8400e4e40f"
 
 [[plugin.release]]
 plugin_api = 14
@@ -50,7 +50,7 @@ tags = ["utility", "indicator", "panel", "bar", "service"]
 plugin_api = 14
 version = "1.2.1"
 updated_at = 1789252056
-rev = "84529f05d4ee70297c0f5103678bf4a822c09e1b"
+rev = "79a453732029cd3fd883420ba6ed0f8400e4e40f"
 
 [[plugin.release]]
 plugin_api = 14
@@ -75,7 +75,7 @@ tags = ["utility", "productivity", "service", "panel", "bar"]
 plugin_api = 15
 version = "1.0.0"
 updated_at = 1788127260
-rev = "84529f05d4ee70297c0f5103678bf4a822c09e1b"
+rev = "79a453732029cd3fd883420ba6ed0f8400e4e40f"
 
 [[plugin.release]]
 plugin_api = 14
@@ -86,8 +86,8 @@ rev = "e57c7091bca5a227c86bfd79335d4bc044d96489"
 [[plugin]]
 id = "nilsonlinux/speedtest-meter"
 name = "Speedtest Meter"
-version = "1.5.0"
-updated_at = 1789506246
+version = "1.5.1"
+updated_at = 1789508777
 added_at = 1788730733
 author = "Nilsonlinux"
 license = "MIT"
@@ -98,9 +98,9 @@ tags = ["network", "indicator", "bar", "panel"]
 
 [[plugin.release]]
 plugin_api = 18
-version = "1.5.0"
-updated_at = 1789506246
-rev = "84529f05d4ee70297c0f5103678bf4a822c09e1b"
+version = "1.5.1"
+updated_at = 1789508777
+rev = "79a453732029cd3fd883420ba6ed0f8400e4e40f"
 
 [[plugin.release]]
 plugin_api = 14
@@ -125,7 +125,7 @@ tags = ["audio", "utility", "bar", "panel", "service"]
 plugin_api = 20
 version = "1.1.0"
 updated_at = 1789314929
-rev = "84529f05d4ee70297c0f5103678bf4a822c09e1b"
+rev = "79a453732029cd3fd883420ba6ed0f8400e4e40f"
 
 [[plugin.release]]
 plugin_api = 20
@@ -150,4 +150,4 @@ tags = ["audio", "music", "network", "panel", "bar", "utility"]
 plugin_api = 24
 version = "1.0.0"
 updated_at = 1789352394
-rev = "84529f05d4ee70297c0f5103678bf4a822c09e1b"
+rev = "79a453732029cd3fd883420ba6ed0f8400e4e40f"
