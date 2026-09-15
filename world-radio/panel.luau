@@ -2013,13 +2013,16 @@ local function pinPlaying(list)
 end
 
 local function gotoPlayingStation()
-  if playingUuid == nil or playQueueView == nil then
+  if playingUuid == nil then
     return
   end
   errorMessage = ""
   hoveredKey = nil
   revealNonce = revealNonce + 1
-  if playQueueView == "country" and selectedCode ~= nil then
+  if (playingUuid or ""):match("^custom%-") ~= nil then
+    view = "custom"
+    pinPlaying(customStations)
+  elseif playQueueView == "country" and selectedCode ~= nil then
     view = "country"
     if stations == nil then
       stations = playQueue
