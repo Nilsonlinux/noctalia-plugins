@@ -15,7 +15,7 @@ Plugins Noctalia V5 (Unofficial)
 | Inventory Manager | `Inventory Manager for managing product inventory with categories, low stock alerts, and data export.` |
 | Speedtest Meter | `Run an internet speed test with a live speedometer and detailed results.` |
 | Contact Notification Sounds | `Plays a unique sound (OGG/MP3) for notifications from people in your contact list.` |
-| World Radio | `Browse thousands of radio stations from around the world with country flags, play them from a dashboard panel.` |
+| World Radio | `Browse thousands of radio stations from around the world with country flags.` |
 
 `https://github.com/Nilsonlinux/noctalia-plugins` 
 
