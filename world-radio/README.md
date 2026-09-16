@@ -133,13 +133,19 @@ the bar text, tooltip and icon.
   `/json/stations/search` (`hidebroken=true`, ordered by votes) with a
   `User-Agent` of `nilsonlinux/world-radio/1.0.0`. No credentials are sent.
 - **Processes** - playback spawns `mpv` (or `ffplay`) per station; the PID is
-  stored in `player.pid` so the next play/Stop kills it cleanly. The debounce
-  and animation timers shell out to `sleep`, and playback cleanup uses `kill`.
+  stored in `player.pid` so the next play/Stop kills it cleanly. Before any
+  `kill`, the PID is cross-checked against `/proc/<pid>/comm` and
+  `/proc/<pid>/cmdline` to confirm the process is actually `mpv`/`ffplay`, so
+  a stale pid file that was recycled by an unrelated process is never
+  signalled. The debounce and animation timers shell out to `sleep`.
 - **Files** - runtime data lives in the plugin's data directory and survives
   reloads: `countries.json` and `stats.json` (4h cache), `favorites.json`,
   `custom-stations.json`, `playing.json` (mini player state), `thumbs/`
   (downloaded favicons) and `player.pid`. All of them can be safely deleted
-  to force a refresh.
+  to force a refresh. Favicon file names derive from a sanitised station id
+  (non `[A-Za-z0-9_-]` characters are stripped) and downloads only accept
+  `http(s)://` artwork URLs, so a remote station id or favicon cannot write
+  outside `thumbs/`.
 - While a station plays, the mini player state is persisted to `playing.json`.
   If the plugin reloads (for example after toggling another plugin in
   Settings), the panel restores the mini player on next open as long as the

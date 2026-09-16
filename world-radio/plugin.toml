@@ -7,7 +7,7 @@ license     = "MIT"
 icon        = "radio"
 description = "Browse thousands of radio stations from around the world with country flags."
 tags        = ["audio", "music", "network", "panel", "bar", "utility"]
-dependencies = ["mpv", "ffmpeg"]
+dependencies = ["mpv", "ffmpeg", "playerctl"]
 
 # ---------------------------------------------------------------------------
 # Bar widget: opens the World Radio panel

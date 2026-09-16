@@ -687,11 +687,32 @@ local function stopPlayback()
   stopLivePulse()
   clearPlayingState()
   publishPlaying()
-  noctalia.runAsync("kill $(cat " .. shellQuote(getDataDir() .. "/player.pid") .. " 2>/dev/null) 2>/dev/null")
+  local pid = storedPlayerPid()
+  if pid ~= nil then
+    noctalia.runAsync("kill " .. tostring(pid))
+  end
   render()
 end
 
 local faviconJobs = {}
+
+local function sanitizeThumbId(raw)
+  local id = tostring(raw or ""):gsub("%.%.", ""):gsub("[^%w%-_]", "_")
+  id = id:gsub("^[_]+", ""):gsub("[_]+$", "")
+  if id == "" then
+    return "station-" .. tostring((os.time() * 1000) % 0xffffffff)
+  end
+  return id
+end
+
+local function validRemoteImageUrl(url)
+  local scheme = tostring(url or ""):match("^([%a][%w%+%-%.]*)://")
+  if scheme == nil then
+    return false
+  end
+  scheme = scheme:lower()
+  return scheme == "http" or scheme == "https"
+end
 
 local function artSource(station)
   if station.favicon ~= "" then
@@ -702,14 +723,14 @@ end
 
 local function artDest(station)
   local src = artSource(station)
-  if src == "" then
+  if src == "" or not validRemoteImageUrl(src) then
     return nil
   end
   local ext = src:match("%.([%w]+)$")
   if ext == "png" or ext == "gif" or ext == "bmp" or ext == "webp" then
-    return getDataDir() .. "/thumbs/" .. station.uuid .. "." .. ext
+    return getDataDir() .. "/thumbs/" .. sanitizeThumbId(station.uuid) .. "." .. ext
   end
-  return getDataDir() .. "/thumbs/" .. station.uuid .. ".jpg"
+  return getDataDir() .. "/thumbs/" .. sanitizeThumbId(station.uuid) .. ".jpg"
 end
 
 local function ensureFavicon(station, onDone)
@@ -735,8 +756,19 @@ local function ensureFavicon(station, onDone)
   list = { onDone }
   faviconJobs[station.uuid] = list
   thumbPending[station.uuid] = true
+  local src = artSource(station)
+  if not validRemoteImageUrl(src) then
+    thumbPending[station.uuid] = nil
+    faviconJobs[station.uuid] = nil
+    failedFavicons[station.uuid] = true
+    render()
+    for _, cb in ipairs(list) do
+      cb(nil)
+    end
+    return
+  end
   noctalia.mkdirAll(getDataDir() .. "/thumbs")
-  noctalia.download(artSource(station), dest, function(ok)
+  noctalia.download(src, dest, function(ok)
     thumbPending[station.uuid] = nil
     faviconJobs[station.uuid] = nil
     if ok then
@@ -756,10 +788,11 @@ local function loadFavicon(station)
 end
 
 local function clearArt(station)
+  local id = sanitizeThumbId(station.uuid)
   thumbs[station.uuid] = nil
   failedFavicons[station.uuid] = nil
   for _, ext in ipairs({ "jpg", "png", "gif", "bmp", "webp" }) do
-    local path = getDataDir() .. "/thumbs/" .. station.uuid .. "." .. ext
+    local path = getDataDir() .. "/thumbs/" .. id .. "." .. ext
     if noctalia.fileInfo(path) ~= nil then
       pcall(noctalia.removeFile, path)
     end
@@ -793,13 +826,36 @@ clearPlayingState = function()
   noctalia.removeFile(playingPath())
 end
 
-playerAlive = function()
+local function isPlayerProcess(pid)
+  local procRoot = "/proc/" .. tostring(pid)
+  if not noctalia.fileExists(procRoot) then
+    return false
+  end
+  local comm = noctalia.readFile(procRoot .. "/comm")
+  if comm ~= nil and (comm:find("mpv", 1, true) ~= nil or comm:find("ffplay", 1, true) ~= nil) then
+    return true
+  end
+  local cmdline = noctalia.readFile(procRoot .. "/cmdline")
+  if cmdline ~= nil and (cmdline:find("mpv", 1, true) ~= nil or cmdline:find("ffplay", 1, true) ~= nil) then
+    return true
+  end
+  return false
+end
+
+local function storedPlayerPid()
   local raw = noctalia.readFile(getDataDir() .. "/player.pid")
   local pid = tonumber((tostring(raw or ""):match("%d+")))
   if pid == nil or pid <= 0 then
-    return false
+    return nil
   end
-  return noctalia.fileExists("/proc/" .. tostring(pid))
+  if not isPlayerProcess(pid) then
+    return nil
+  end
+  return pid
+end
+
+playerAlive = function()
+  return storedPlayerPid() ~= nil
 end
 
 restorePlayingState = function()
@@ -914,9 +970,13 @@ local function playStation(station, sourceView)
   if cover ~= nil then
     coverArg = " --cover-art-files=" .. shellQuote(cover)
   end
+  local oldPid = storedPlayerPid()
+  if oldPid ~= nil then
+    noctalia.runAsync("kill " .. tostring(oldPid))
+  end
   local cmd = string.format(
-    "kill $(cat %s 2>/dev/null) 2>/dev/null; %s %s%s %s >/dev/null 2>&1 & echo $! > %s",
-    shellQuote(pidFile), playerName, playerArgs, coverArg, shellQuote(station.url), shellQuote(pidFile)
+    "%s %s%s %s >/dev/null 2>&1 & echo $! > %s",
+    playerName, playerArgs, coverArg, shellQuote(station.url), shellQuote(pidFile)
   )
   noctalia.runAsync(cmd)
   if cover == nil then
