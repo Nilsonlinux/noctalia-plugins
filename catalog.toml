@@ -25,7 +25,7 @@ tags = ["network", "indicator", "bar", "panel", "service"]
 plugin_api = 14
 version = "1.0.2"
 updated_at = 1788554504
-rev = "eed988b4d7a3d55a7d922e6f217e70628c7f678c"
+rev = "dce2bb891e421e4721d28eb90311d2fde5a0342b"
 
 [[plugin.release]]
 plugin_api = 14
@@ -50,7 +50,7 @@ tags = ["utility", "indicator", "panel", "bar", "service"]
 plugin_api = 14
 version = "1.2.1"
 updated_at = 1789252056
-rev = "eed988b4d7a3d55a7d922e6f217e70628c7f678c"
+rev = "dce2bb891e421e4721d28eb90311d2fde5a0342b"
 
 [[plugin.release]]
 plugin_api = 14
@@ -75,7 +75,7 @@ tags = ["utility", "productivity", "service", "panel", "bar"]
 plugin_api = 15
 version = "1.0.0"
 updated_at = 1788127260
-rev = "eed988b4d7a3d55a7d922e6f217e70628c7f678c"
+rev = "dce2bb891e421e4721d28eb90311d2fde5a0342b"
 
 [[plugin.release]]
 plugin_api = 14
@@ -100,7 +100,7 @@ tags = ["network", "indicator", "bar", "panel"]
 plugin_api = 18
 version = "1.5.1"
 updated_at = 1789508777
-rev = "eed988b4d7a3d55a7d922e6f217e70628c7f678c"
+rev = "dce2bb891e421e4721d28eb90311d2fde5a0342b"
 
 [[plugin.release]]
 plugin_api = 14
@@ -125,7 +125,7 @@ tags = ["audio", "utility", "bar", "panel", "service"]
 plugin_api = 20
 version = "1.1.0"
 updated_at = 1789314929
-rev = "eed988b4d7a3d55a7d922e6f217e70628c7f678c"
+rev = "dce2bb891e421e4721d28eb90311d2fde5a0342b"
 
 [[plugin.release]]
 plugin_api = 20
@@ -150,7 +150,7 @@ tags = ["audio", "music", "network", "panel", "bar", "utility"]
 plugin_api = 24
 version = "1.0.4"
 updated_at = 1789514234
-rev = "eed988b4d7a3d55a7d922e6f217e70628c7f678c"
+rev = "dce2bb891e421e4721d28eb90311d2fde5a0342b"
 
 [[plugin.release]]
 plugin_api = 24
