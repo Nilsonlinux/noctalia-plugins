@@ -557,13 +557,19 @@ maybeRefreshGauges = function()
 end
 
 renderGauge = function(labelKey: string, value: number, accent: string, soft: string, arrowGlyph: string, kind: string, active: boolean)
+	-- If the gauge worker is running but images are not ready yet, show a
+	-- transparent placeholder instead of the fallback circle to avoid a
+	-- visible flash of the old circle before the speedometer appears.
+	if gaugeWorkerStarted and not gaugeReady then
+		return ui.box({ width = 160, height = 160, fill = "#00000000" })
+	end
 	local path = gaugeReady and (kind == "download" and downGaugePath or upGaugePath) or nil
 	if path and noctalia.fileExists(path) then
 		return ui.image({
 			key = "gauge-" .. kind .. "-" .. tostring(gaugeKey),
 			path = path,
 			width = 160,
-			height = 130,
+			height = 160,
 		})
 	end
 	return liveMetricCircle(labelKey, value, accent, soft, arrowGlyph, active)

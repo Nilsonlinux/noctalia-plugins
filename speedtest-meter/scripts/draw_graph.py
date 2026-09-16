@@ -12,7 +12,7 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 
 # ---------------- Canvas ----------------------------------------------------
-WIDTH, HEIGHT = 216, 216
+WIDTH, HEIGHT = 216, 320
 SCALE = 3
 w_hi, h_hi = WIDTH * SCALE, HEIGHT * SCALE
 
@@ -64,22 +64,29 @@ font_sub = get_font(24)
 
 
 def draw_capsule_arc(draw, center, radius, thickness, start_angle, end_angle, fill):
-    """Draw an arc with rounded (capsule) ends — same technique as processes."""
+    """Draw an arc with rounded (capsule) ends — same technique as processes.
+    Handles arcs that wrap past 360° by splitting into two draw calls."""
     cx, cy = center
     mid_r = radius - thickness / 2.0
     cap_r = thickness / 2.0
 
-    bbox = [cx - radius, cy - radius, cx + radius, cy + radius]
-    draw.arc(bbox, start=start_angle, end=end_angle, fill=fill, width=int(thickness))
+    def _single_arc(sa, ea):
+        bbox = [cx - radius, cy - radius, cx + radius, cy + radius]
+        draw.arc(bbox, start=sa, end=ea, fill=fill, width=int(thickness))
+        for angle in (sa, ea):
+            rad = math.radians(angle)
+            cap_x = cx + mid_r * math.cos(rad)
+            cap_y = cy + mid_r * math.sin(rad)
+            draw.ellipse(
+                [cap_x - cap_r, cap_y - cap_r, cap_x + cap_r, cap_y + cap_r],
+                fill=fill,
+            )
 
-    for angle in (start_angle, end_angle):
-        rad = math.radians(angle)
-        cap_x = cx + mid_r * math.cos(rad)
-        cap_y = cy + mid_r * math.sin(rad)
-        draw.ellipse(
-            [cap_x - cap_r, cap_y - cap_r, cap_x + cap_r, cap_y + cap_r],
-            fill=fill,
-        )
+    if end_angle > 360.0:
+        _single_arc(start_angle, 360.0)
+        _single_arc(0.0, end_angle - 360.0)
+    else:
+        _single_arc(start_angle, end_angle)
 
 
 def draw_speedometer(percent, value_text, unit_text, label_text, max_label,
@@ -89,23 +96,34 @@ def draw_speedometer(percent, value_text, unit_text, label_text, max_label,
     draw = ImageDraw.Draw(img)
 
     cx = (WIDTH // 2) * SCALE
-    cy = 104 * SCALE
+    cy = 164 * SCALE
     radius = 78 * SCALE
     thickness = 14 * SCALE
 
-    start_deg = 180.0
-    end_deg = 360.0
+    # 270° arc — open at the bottom like speedtest.net.
+    # The arc sweeps from bottom-left (135°) clockwise to bottom-right (45°),
+    # covering 270° of the circle.
+    start_deg = 135.0
+    arc_span = 270.0
+    end_deg = start_deg + arc_span
     pct = max(0.0, min(1.0, float(percent) / 100.0))
-    progress_deg = start_deg + (end_deg - start_deg) * pct
+    progress_deg = start_deg + arc_span * pct
 
-    # Track ring (silent semicircle arc).
+    # Helper: draw an arc that may wrap past 360° by splitting into two calls.
+    def _draw_arc(draw_obj, bbox, sa, ea, fill, width):
+        if ea > 360.0:
+            draw_obj.arc(bbox, start=sa, end=360.0, fill=fill, width=width)
+            draw_obj.arc(bbox, start=0.0, end=ea - 360.0, fill=fill, width=width)
+        else:
+            draw_obj.arc(bbox, start=sa, end=ea, fill=fill, width=width)
+
+    # Track ring (the full 270° arc).
     bbox = [cx - radius, cy - radius, cx + radius, cy + radius]
-    draw.arc(bbox, start=start_deg, end=end_deg, fill=skin["track"],
-             width=int(thickness))
+    _draw_arc(draw, bbox, start_deg, end_deg, skin["track"], int(thickness))
 
-    # Colored progress arc with a soft halo, exactly like the processes ring.
+    # Colored progress arc with a soft halo.
     if pct > 0:
-        span = max((end_deg - start_deg) * pct, 18)
+        span = max(arc_span * pct, 18)
         halo_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
         halo_draw = ImageDraw.Draw(halo_layer)
         halo_thickness = thickness + 8 * SCALE
@@ -118,13 +136,11 @@ def draw_speedometer(percent, value_text, unit_text, label_text, max_label,
         draw_capsule_arc(draw, (cx, cy), radius, thickness,
                          start_deg, start_deg + span, accent + (255,))
 
-    # Ticks along the outer edge of the dial. The ones the needle has already
-    # passed light up with the accent color, fading toward the arc tip, so the
-    # gauge shows a "running light" trail while the needle sweeps.
+    # Ticks along the outer edge of the dial.
     r_tick = radius + thickness / 2.0
     for i in range(0, 11):
         t = i / 10.0
-        a = math.radians(start_deg + (end_deg - start_deg) * t)
+        a = math.radians(start_deg + arc_span * t)
         if i % 5 == 0:
             length, width = 11 * SCALE, int(3 * SCALE)
         else:
@@ -140,12 +156,17 @@ def draw_speedometer(percent, value_text, unit_text, label_text, max_label,
             color = skin["muted"]
         draw.line([x1, y1, x2, y2], fill=color, width=width)
 
-    # Scale end numerals ("0" .. <max>) mirrored under the track ends.
-    draw.text((cx - r_tick - 20 * SCALE, cy + 6 * SCALE), "0",
-              font=font_label, fill=skin["muted"], anchor="lm")
+    # Scale end numerals ("0" .. <max>) at the bottom openings of the arc.
+    left_angle = math.radians(start_deg)
+    right_angle = math.radians(end_deg)
+    num_r = r_tick + 18 * SCALE
+    draw.text((cx + num_r * math.cos(left_angle),
+               cy + num_r * math.sin(left_angle)), "0",
+              font=font_label, fill=skin["muted"], anchor="mm")
     if max_label:
-        draw.text((cx + r_tick + 20 * SCALE, cy + 6 * SCALE), max_label,
-                  font=font_label, fill=skin["muted"], anchor="rm")
+        draw.text((cx + num_r * math.cos(right_angle),
+                   cy + num_r * math.sin(right_angle)), max_label,
+                  font=font_label, fill=skin["muted"], anchor="mm")
 
     # Needle + center hub.
     a = math.radians(progress_deg)
@@ -162,8 +183,7 @@ def draw_speedometer(percent, value_text, unit_text, label_text, max_label,
         fill=skin["text"],
     )
 
-    # Center text block (value / unit / label) drawn on top of the needle so
-    # the number is always readable.
+    # Center text block (value / unit / label) drawn below the needle hub.
     draw.text((cx, cy + 34 * SCALE), value_text, font=font_value,
               fill=skin["text"], anchor="mm")
     if unit_text:
@@ -173,8 +193,8 @@ def draw_speedometer(percent, value_text, unit_text, label_text, max_label,
         draw.text((cx, cy + 78 * SCALE), label_text, font=font_label,
                   fill=accent + (255,), anchor="mm")
 
-    # Crop the transparent bottom so the dial fills the exported image.
-    crop_bottom = 176
+    # Crop to show the full gauge including the circular arc.
+    crop_bottom = 280
     final_w = export_size
     final_h = int(export_size * (crop_bottom / WIDTH))
     final_img = img.crop((0, 0, WIDTH * SCALE, crop_bottom * SCALE)) \
