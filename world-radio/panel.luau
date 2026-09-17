@@ -1509,11 +1509,25 @@ local function stationRow(s, sourceView)
     }, { ui.glyph({ name = "radio", size = 15, color = "outline" }) }))
   end
 
-  local labels = { ui.label({ text = s.name, fontSize = 12, maxLines = 1 }) }
+  local labels = {
+    ui.label({
+      text      = s.name,
+      fontSize  = 12,
+      maxLines  = 1,
+      minWidth  = 0,
+      textAlign = "left",
+    }),
+  }
   if metaText ~= "" then
     table.insert(labels, ui.label({ text = metaText, fontSize = 11, color = "outline" }))
   end
-  table.insert(parts, ui.column({ flexGrow = 1, gap = 0 }, labels))
+  table.insert(parts, ui.column({
+    width = 0,
+    flexGrow = 1,
+    minWidth = 0,
+    gap = 0,
+    align = "start",
+  }, labels))
 
   if s.votes > 0 then
     table.insert(parts, ui.label({ text = tostring(s.votes), fontSize = 11, color = "on_surface/0.45" }))
@@ -1551,7 +1565,7 @@ local function stationRow(s, sourceView)
     paddingH = 6,
     paddingV = 1,
     radius  = 6,
-    fill        = isPlaying and "primary/0.12" or "surface_variant/0.4",
+    fill        = isPlaying and "primary/0.12" or (isHovered and "surface_variant/0.4" or nil),
     border      = isPlaying and "primary/0.3" or "outline",
     borderWidth = (isHovered or isPlaying) and 1 or 0,
     onHover = function(isHovering)
