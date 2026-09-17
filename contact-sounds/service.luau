@@ -67,18 +67,15 @@ end
 -- The host (API 20) suppresses noctalia.sound.play() only while the *same*
 -- buffer object is still active (compare by buffer identity), so a rapid second
 -- hit for a contact with a still-playing sound is otherwise swallowed. We work
--- around it with a small ring of sound-bank names per contact: re-loading a
--- ring slot mints a brand-new buffer, whose play() starts a fresh stream from
--- the beginning and overrides the previous one.
+-- around it with a small ring of sound-bank names per contact: every play
+-- re-loads one of the ring slots, minting a fresh buffer whose play() starts a
+-- new stream from the beginning and overrides the previous one. (A stream
+-- orphaned by the external-stop workaround stays "active" in the host forever,
+-- which is why the warm same-buffer path was removed: it could be suppressed.)
 --
--- OVERRIDE_WINDOW_MS  how long after a play we assume that contact's sound may
---                     still be running; hits landing inside it go through the
---                     ring (fresh buffer), older ones use the warm buffer at
---                     zero added latency.
--- OVERRIDE_SLOTS      distinct buffers kept per contact; once they are all busy
---                     decoding, extra simultaneous hits queue for the next tick
---                     instead of being lost.
-local OVERRIDE_WINDOW_MS = 4000
+-- OVERRIDE_SLOTS     distinct buffers kept per contact; once they are all busy
+--                    decoding, extra simultaneous hits queue for the next tick
+--                    instead of being lost.
 local OVERRIDE_SLOTS = 3
 
 local function newEntry(name, path)
@@ -114,6 +111,97 @@ local function cfgMap(key)
   return out
 end
 
+local function cfgList(key)
+  local v = noctalia.getConfig(key) or {}
+  if type(v) ~= "table" then
+    return {}
+  end
+  local out = {}
+  for _, s in ipairs(v) do
+    out[#out + 1] = tostring(s)
+  end
+  return out
+end
+
+-- ---------------------------------------------------------------------------
+-- Authoritative contact data (owned by this runtime).
+-- ---------------------------------------------------------------------------
+-- Contacts are edited from the panel; everything that used to live in
+-- [plugin_settings] and needed a config-reload (which closes every plugin
+-- panel) now lives in the plugin's own data file and is synced to the panel
+-- through noctalia.state, so the panel can mutate the list and reorder it
+-- while staying open, exactly like inventory-manager.
+local contacts = {}        -- map name -> sound path (file or folder)
+local contactKinds = {}    -- map name -> "contact" | "group" | "app"
+local contactImages = {}   -- map name -> image path
+local folderSounds = {}    -- map name -> picked folder member ("" = random)
+local contactOrder = {}    -- ordered array of names (display order)
+local soundFolders = {}    -- registry of folders added through the panel
+local dataPath = nil
+
+local function seedFromConfig()
+  contacts = cfgMap("contacts")
+  contactKinds = cfgMap("contact_kinds")
+  contactImages = cfgMap("contact_images")
+  folderSounds = cfgMap("folder_sounds")
+  contactOrder = cfgList("contact_order")
+  soundFolders = cfgList("sound_folders")
+end
+
+local function saveData()
+  if not dataPath then
+    return false
+  end
+  local ok, encoded = pcall(noctalia.json.encode, {
+    contacts = contacts,
+    kinds = contactKinds,
+    images = contactImages,
+    folder_sounds = folderSounds,
+    order = contactOrder,
+    sound_folders = soundFolders,
+  })
+  if ok and type(encoded) == "string" then
+    return pcall(noctalia.writeFile, dataPath, encoded) and true or false
+  end
+  return false
+end
+
+local function loadData()
+  local dir = noctalia.pluginDataDir()
+  if not dir then
+    return
+  end
+  dataPath = dir .. "/state.json"
+  local raw = noctalia.readFile(dataPath)
+  if raw then
+    local ok, decoded = pcall(noctalia.json.decode, raw)
+    if ok and type(decoded) == "table" then
+      if type(decoded.contacts) == "table" then contacts = decoded.contacts end
+      if type(decoded.kinds) == "table" then contactKinds = decoded.kinds end
+      if type(decoded.images) == "table" then contactImages = decoded.images end
+      if type(decoded.folder_sounds) == "table" then folderSounds = decoded.folder_sounds end
+      if type(decoded.order) == "table" then contactOrder = decoded.order end
+      if type(decoded.sound_folders) == "table" then soundFolders = decoded.sound_folders end
+      return
+    end
+  end
+  -- First run (or incompatible file): seed from the app-managed settings and
+  -- move the data under our own control from here on.
+  seedFromConfig()
+  saveData()
+end
+
+local function publishData()
+  noctalia.state.set("contacts.data", {
+    contacts = contacts,
+    kinds = contactKinds,
+    images = contactImages,
+    folder_sounds = folderSounds,
+    order = contactOrder,
+    sound_folders = soundFolders,
+  })
+end
+
 local function expandPath(p)
   if p:sub(1, 1) == "~" then
     return noctalia.expandPath(p)
@@ -144,7 +232,6 @@ end
 -- resolves to the chosen sound (folder_sounds), or a random member so a
 -- folder means "any of these sounds".
 local function resolveSoundFile(name)
-  local contacts = noctalia.getConfig("contacts") or {}
   local raw = contacts[name]
   if not raw then
     return nil
@@ -156,7 +243,7 @@ local function resolveSoundFile(name)
     if #files == 0 then
       return nil
     end
-    local chosen = cfgMap("folder_sounds")[name]
+    local chosen = folderSounds[name]
     if chosen and chosen ~= "" then
       for _, f in ipairs(files) do
         if f == chosen then
@@ -177,7 +264,6 @@ end
 -- come from `sounds`, everything else is a not-loaded placeholder (the panel
 -- turns that into its spinner/error glyph instead of dropping the row).
 local function publishLoaded()
-  local contacts = noctalia.getConfig("contacts") or {}
   local merged = {}
   for s, entry in pairs(sounds) do
     if contacts[entry.name] ~= nil then
@@ -203,22 +289,15 @@ local function publishLoaded()
 end
 
 -- Fires an audible playback for this hit, overriding a still-playing identical
--- sound instead of being suppressed by the host. The warm-buffer fast path is
--- taken only when our last play for this contact is older than the override
--- window (the previous stream is near-certainly gone). Otherwise a ring slot is
--- re-loaded to mint a fresh buffer and played from the start. Returns true when
--- playback started, or a load was accepted (its callback plays); false when
--- every ring slot is still decoding and the caller should queue a retry.
+-- sound instead of being suppressed by the host. Every play goes through the
+-- ring: there is no warm fast path because the host suppresses play() while
+-- the *same* buffer's stream is still tracked as active, and a stream orphaned
+-- by an external stop stays "active" for good, so a warm play could silently
+-- do nothing. Re-loading a ring slot always mints a fresh buffer, whose play()
+-- is never suppressed and starts from the beginning. Returns true when a load
+-- was accepted (its callback plays); false when every ring slot is still
+-- decoding and the caller should queue a retry.
 local function firePlay(s, resolved, entry)
-  local now = noctalia.nowMs()
-  if entry.loaded and entry.path == resolved then
-    if now - (entry.lastPlayAt or 0) >= OVERRIDE_WINDOW_MS then
-      entry.lastPlayAt = now
-      noctalia.sound.play(s)
-      return true
-    end
-  end
-
   local slots = entry.slots
   local idx = entry.slotIdx or 0
   for _ = 1, #slots do
@@ -256,7 +335,6 @@ end
 -- and drops warm entries that stopped resolving (deleted or empty folder).
 local function queueContacts()
   pending = {}
-  local contacts = noctalia.getConfig("contacts") or {}
   local resolvable = {}
   for name, rawPath in pairs(contacts) do
     local n = tostring(name)
@@ -370,15 +448,13 @@ end
 -- "this app made a sound"), while contacts/groups match summary + body + app
 -- name like before.
 local function matchContact(appName, title, body)
-  local contacts = noctalia.getConfig("contacts") or {}
-  local kinds = noctalia.getConfig("contact_kinds") or {}
   local sensitive = noctalia.getConfig("match_case_sensitive") == true
 
   for name, _ in pairs(contacts) do
     local n = tostring(name)
     local needle = sensitive and n or lower(n)
     if needle ~= "" then
-      local kind = kinds[n] or "contact"
+      local kind = contactKinds[n] or "contact"
       local hay
       if kind == "app" then
         hay = appName
@@ -459,7 +535,6 @@ local function escapeRegex(s)
 end
 
 local function loadedContactNames()
-  local contacts = noctalia.getConfig("contacts") or {}
   local out = {}
   for _, entry in pairs(sounds) do
     if entry.loaded and contacts[entry.name] ~= nil then
@@ -529,6 +604,47 @@ requestFilterSync = function()
 end
 
 -- ---------------------------------------------------------------------------
+-- Panel -> service command bus
+-- ---------------------------------------------------------------------------
+-- The panel sends the full authoritative data tables after every mutation and
+-- this runtime applies them, persists them to state.json and re-syncs the
+-- sound matching / system-sound filter — all without a config-reload, so the
+-- panel never closes.
+local function applyData(d)
+  if type(d) ~= "table" then
+    return false
+  end
+  if type(d.contacts) == "table" then contacts = d.contacts end
+  if type(d.kinds) == "table" then contactKinds = d.kinds end
+  if type(d.images) == "table" then contactImages = d.images end
+  if type(d.folder_sounds) == "table" then folderSounds = d.folder_sounds end
+  if type(d.order) == "table" then contactOrder = d.order end
+  if type(d.sound_folders) == "table" then soundFolders = d.sound_folders end
+  return true
+end
+
+noctalia.state.watch("contacts.cmd", function(cmd)
+  if type(cmd) ~= "table" then
+    return
+  end
+  if cmd.op == "mutate" then
+    if applyData(cmd.data) then
+      if not saveData() then
+        noctalia.log("contact-sounds: failed to persist state.json")
+      end
+      noctalia.notify(tr("panel.title"), tr("panel.saved"))
+      queueContacts()
+      publishData()
+    end
+  elseif cmd.op == "reload" then
+    loadData()
+    queueContacts()
+    publishData()
+  end
+  noctalia.state.set("contacts.cmd", nil)
+end)
+
+-- ---------------------------------------------------------------------------
 -- Monitor lifecycle
 -- ---------------------------------------------------------------------------
 
@@ -543,11 +659,40 @@ local function startMonitor()
   return noctalia.runStream(shellQuote(script), handleLine)
 end
 
+-- Stops any currently-playing sound. There is no runtime API to stop playback,
+-- so the panel's stop button asks us to destroy the active "noctalia-sound"
+-- PipeWire nodes (see scripts/stop_sounds.py).
+--
+-- The host still tracks the destroyed stream's buffer as "active" afterwards
+-- and silently swallows a later play() of that same buffer (no new PipeWire
+-- node is created), which left the panel's test muted after a stop. Fix: once
+-- the nodes are gone, invalidate every contact so the next play re-loads and
+-- mints a fresh buffer that is never suppressed.
+local function stopSounds()
+  local dir = noctalia.pluginDir()
+  if not dir then
+    return
+  end
+  local script = dir .. "/scripts/stop_sounds.py"
+  noctalia.runAsync("python3 " .. shellQuote(script), function(result)
+    if result and result.exitCode ~= 0 then
+      noctalia.log("contact-sounds: stop_sounds.py failed: " .. tostring(result.stderr))
+    end
+    for _, entry in pairs(sounds) do
+      entry.loaded = false
+      entry.lastPlayAt = 0
+    end
+    publishLoaded()
+  end)
+end
+
 -- ---------------------------------------------------------------------------
 -- Lifecycle
 -- ---------------------------------------------------------------------------
 
+loadData()
 queueContacts()
+publishData()
 local monitorStarted = startMonitor()
 if not monitorStarted then
   noctalia.log("contact-sounds: could not start dbus-monitor stream")
@@ -563,13 +708,17 @@ function update()
 end
 
 function onConfigChanged()
+  loadData()
   queueContacts()
+  publishData()
   requestFilterSync()
 end
 
 function onIpc(_event, payload)
   if _event == "play" and payload then
     playNamed(payload)
+  elseif _event == "stop" then
+    stopSounds()
   elseif _event == "reload" then
     queueContacts()
   end

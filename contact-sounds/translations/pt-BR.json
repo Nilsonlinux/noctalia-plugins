@@ -1,7 +1,7 @@
 {
     "panel": {
         "add_button": "Adicionar",
-        "add_folder_tooltip": "Adicionar pasta",
+        "add_folder_tooltip": "Adicionar novo contato",
         "add_image": "Caminho da foto / ícone (opcional)",
         "add_name": "Nome",
         "add_path": "Caminho do som .ogg/.mp3",
@@ -33,9 +33,11 @@
         "need_sounds": "A pasta precisa conter um arquivo de áudio (.ogg, .mp3 ou .wav).",
         "path_label": "Som",
         "play_tooltip": "Tocar o som desta entrada",
+        "reorder_tooltip": "Arraste para reordenar a lista",
         "save_button": "Salvar",
         "saved": "Lista de contatos atualizada",
         "settings_tooltip": "Abrir configurações do plugin",
+        "stop_tooltip": "Parar o som que está tocando",
         "title": "Sons de Contato"
     },
     "settings": {
@@ -50,6 +52,10 @@
         "contacts": {
             "description": "Mapa de nomes de pessoa/grupo/app para o som tocado quando uma notificação menciona esse nome. Valor: caminho absoluto de um arquivo .ogg/.mp3, ou uma pasta de arquivos de som. Com pasta, toca o som escolhido na lista do painel (ou um aleatório quando nenhum for escolhido).",
             "label": "Contatos"
+        },
+        "contact_order": {
+            "description": "Ordem dos contatos na lista do painel. Mude arrastando as entradas no painel.",
+            "label": "Ordem da lista"
         },
         "folder_sounds": {
             "description": "Mapa de nomes para o arquivo de som escolhido dentro de uma entrada de pasta. Vazio significa qualquer som (aleatório).",

@@ -1,7 +1,7 @@
 {
     "panel": {
         "add_button": "Add",
-        "add_folder_tooltip": "Add folder",
+        "add_folder_tooltip": "Add new contact",
         "add_image": "Photo / icon path (optional)",
         "add_name": "Name",
         "add_path": "Path to .ogg/.mp3 sound",
@@ -32,9 +32,11 @@
         "mode_label": "Sound source",
         "path_label": "Sound",
         "play_tooltip": "Play this contact's sound",
+        "reorder_tooltip": "Drag to reorder the list",
         "save_button": "Save",
         "saved": "Contact list updated",
         "settings_tooltip": "Open plugin settings",
+        "stop_tooltip": "Stop the sound that is currently playing",
         "title": "Contact Sounds",
         "need_sounds": "The folder must contain an audio file (.ogg, .mp3 or .wav)."
     },
@@ -50,6 +52,10 @@
         "contacts": {
             "description": "Map of person/group/app names to the sound played when a notification mentions them. Value: absolute path to a .ogg/.mp3 file, or a folder of sound files. When a folder is used, the sound shown in the panel list plays (or a random one when nothing is picked).",
             "label": "Contacts"
+        },
+        "contact_order": {
+            "description": "Order contacts appear in the panel list. Change it by dragging entries in the panel.",
+            "label": "List order"
         },
         "folder_sounds": {
             "description": "Map of names to the selected sound filename inside a folder entry. Empty means any sound (random).",
