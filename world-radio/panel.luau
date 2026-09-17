@@ -1546,10 +1546,10 @@ local function stationRow(s, sourceView)
     width = 0,
     flexGrow = 1,
     minWidth = 0,
-    gap = 0,
+    gap = 2,
     align = "start",
     justify = "center",
-    minHeight = 30,
+    minHeight = 34,
   }, labels))
 
   if s.votes > 0 then
@@ -1591,8 +1591,8 @@ local function stationRow(s, sourceView)
     fill        = isPlaying and "primary/0.12" or (isHovered and "surface_variant/0.55" or "surface_variant/0.4"),
     border      = isPlaying and "primary/0.3" or "outline",
     borderWidth = (isHovered or isPlaying) and 1 or 0,
-    minHeight   = 36,
-    height      = 36,
+    minHeight   = 40,
+    height      = 40,
     onHover = function(isHovering)
       hoveredKey = isHovering and key or nil
       render()
@@ -2181,9 +2181,7 @@ renderMiniPlayer = function()
   local thumb = thumbs[playingUuid]
   local parts = {}
   table.insert(parts, ui.glyph({ name = "volume-2", size = 11, color = "primary" }))
-  if thumb ~= nil then
-    table.insert(parts, stationArt(thumb, 22, "radio"))
-  end
+  table.insert(parts, stationArt(thumb, 22, "radio"))
   local now = noctalia.nowMs() / 1000
   local wave = (math.sin(now / 0.8 * math.pi) + 1) / 2
   local alpha = math.floor((0.20 + 0.80 * wave) * 255)
@@ -2234,38 +2232,63 @@ renderMiniPlayer = function()
       }),
     }))
   end
-  local infoCol = ui.column({ gap = 2, align = "start", flexGrow = 1, minWidth = 0 }, infoParts)
-  table.insert(parts, infoCol)
+  local infoCol = ui.column({
+    gap = 2,
+    align = "start",
+    flexGrow = 1,
+    minWidth = 0,
+    maxWidth = 260,
+    flexShrink = 1,
+  }, infoParts)
+
+  local leftParts = {}
+  for _, child in ipairs(parts) do
+    table.insert(leftParts, child)
+  end
+  table.insert(leftParts, infoCol)
+
+  local leftGroup = ui.row({
+    gap = 6,
+    align = "center",
+    flexGrow = 1,
+    minWidth = 0,
+    maxWidth = 420,
+    flexShrink = 1,
+  }, leftParts)
+
   local hasQueue = (playQueue ~= nil and #playQueue > 1)
-  table.insert(parts, ui.button({
-    glyph       = "player-skip-back",
-    variant     = "ghost",
-    controlSize = "sm",
-    tooltip     = tr("panel.prev_tooltip"),
-    enabled     = hasQueue,
-    onClick     = function() skipPlaying(-1) end,
-  }))
-  table.insert(parts, ui.button({
-    glyph       = "dice",
-    variant     = "ghost",
-    controlSize = "sm",
-    tooltip     = tr("panel.random_tooltip"),
-    enabled     = hasQueue,
-    onClick     = playRandomStation,
-  }))
-  table.insert(parts, ui.button({
-    glyph       = "player-skip-forward",
-    variant     = "ghost",
-    controlSize = "sm",
-    tooltip     = tr("panel.next_tooltip"),
-    enabled     = hasQueue,
-    onClick     = function() skipPlaying(1) end,
-  }))
+  local controls = {
+    ui.button({
+      glyph       = "player-skip-back",
+      variant     = "ghost",
+      controlSize = "sm",
+      tooltip     = tr("panel.prev_tooltip"),
+      enabled     = hasQueue,
+      onClick     = function() skipPlaying(-1) end,
+    }),
+    ui.button({
+      glyph       = "dice",
+      variant     = "ghost",
+      controlSize = "sm",
+      tooltip     = tr("panel.random_tooltip"),
+      enabled     = hasQueue,
+      onClick     = playRandomStation,
+    }),
+    ui.button({
+      glyph       = "player-skip-forward",
+      variant     = "ghost",
+      controlSize = "sm",
+      tooltip     = tr("panel.next_tooltip"),
+      enabled     = hasQueue,
+      onClick     = function() skipPlaying(1) end,
+    }),
+  }
+
   local playingFaved = false
   if playingStation ~= nil then
     playingFaved = isFavorite(playingStation.uuid)
   end
-  table.insert(parts, ui.button({
+  table.insert(controls, ui.button({
     glyph       = playingFaved and "star-filled" or "star",
     variant     = "ghost",
     controlSize = "sm",
@@ -2277,7 +2300,7 @@ renderMiniPlayer = function()
       end
     end,
   }))
-  table.insert(parts, ui.button({
+  table.insert(controls, ui.button({
     glyph       = "playlist",
     variant     = "ghost",
     controlSize = "sm",
@@ -2285,23 +2308,33 @@ renderMiniPlayer = function()
     enabled     = (playQueue ~= nil),
     onClick     = gotoPlayingStation,
   }))
-  table.insert(parts, ui.button({
+  table.insert(controls, ui.button({
     glyph       = "square",
     variant     = "primary",
     controlSize = "sm",
     tooltip     = tr("panel.stop_tooltip"),
     onClick     = stopPlayback,
   }))
+
+  local controlCol = ui.row({
+    gap = 6,
+    align = "center",
+    flexShrink = 0,
+    marginLeft = "auto",
+  }, controls)
+
   return ui.row({
     gap         = 6,
     align       = "center",
+    justify     = "space_between",
     paddingH    = 8,
     paddingV    = 6,
     radius      = 8,
     fill        = "primary/0.12",
     border      = "primary/0.25",
     borderWidth = 1,
-  }, parts)
+    width       = "100%",
+  }, { leftGroup, controlCol })
 end
 
 render = function()
