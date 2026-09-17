@@ -1565,7 +1565,7 @@ local function stationRow(s, sourceView)
     paddingH = 6,
     paddingV = 1,
     radius  = 6,
-    fill        = isPlaying and "primary/0.12" or (isHovered and "surface_variant/0.4" or nil),
+    fill        = isPlaying and "primary/0.12" or (isHovered and "surface_variant/0.55" or "surface_variant/0.4"),
     border      = isPlaying and "primary/0.3" or "outline",
     borderWidth = (isHovered or isPlaying) and 1 or 0,
     onHover = function(isHovering)
