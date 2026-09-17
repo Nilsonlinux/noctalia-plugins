@@ -1470,6 +1470,38 @@ renderDashboard = function()
   return children
 end
 
+local function stationArt(thumb, size, fallbackGlyph)
+  local artSize = size or 26
+  local glyphName = fallbackGlyph or "radio"
+  local glyphSize = math.max(12, math.floor(artSize * 0.58))
+
+  if thumb ~= nil then
+    return ui.column({
+      width    = artSize,
+      height   = artSize,
+      radius   = 4,
+      overflow = "hidden",
+      align    = "center",
+      justify  = "center",
+      minWidth = artSize,
+      minHeight = artSize,
+    }, {
+      ui.image({ path = thumb, width = artSize, height = artSize, fit = "cover" }),
+    })
+  end
+
+  return ui.column({
+    width   = artSize,
+    height  = artSize,
+    radius  = 4,
+    fill    = "surface_variant/0.65",
+    align   = "center",
+    justify = "center",
+    minWidth = artSize,
+    minHeight = artSize,
+  }, { ui.glyph({ name = glyphName, size = glyphSize, color = "outline" }) })
+end
+
 local function stationRow(s, sourceView)
   loadFavicon(s)
   local isPlaying = playingUuid == s.uuid
@@ -1496,18 +1528,7 @@ local function stationRow(s, sourceView)
   local isHovered = (hoveredKey == key)
 
   local parts = {}
-  if thumb ~= nil then
-    table.insert(parts, ui.image({ path = thumb, width = 26, height = 26, radius = 4 }))
-  else
-    table.insert(parts, ui.column({
-      width   = 26,
-      height  = 26,
-      radius  = 4,
-      fill    = "surface_variant/0.65",
-      align   = "center",
-      justify = "center",
-    }, { ui.glyph({ name = "radio", size = 15, color = "outline" }) }))
-  end
+  table.insert(parts, stationArt(thumb, 26, "radio"))
 
   local labels = {
     ui.label({
@@ -1527,6 +1548,8 @@ local function stationRow(s, sourceView)
     minWidth = 0,
     gap = 0,
     align = "start",
+    justify = "center",
+    minHeight = 30,
   }, labels))
 
   if s.votes > 0 then
@@ -1568,6 +1591,8 @@ local function stationRow(s, sourceView)
     fill        = isPlaying and "primary/0.12" or (isHovered and "surface_variant/0.55" or "surface_variant/0.4"),
     border      = isPlaying and "primary/0.3" or "outline",
     borderWidth = (isHovered or isPlaying) and 1 or 0,
+    minHeight   = 36,
+    height      = 36,
     onHover = function(isHovering)
       hoveredKey = isHovering and key or nil
       render()
@@ -1898,16 +1923,7 @@ local function customRow(s, index)
   local labels = { ui.label({ text = s.name, fontSize = 12, maxLines = 1 }) }
   local art = thumbs[s.uuid]
   local parts = {
-    art ~= nil
-        and ui.image({ path = art, width = 22, height = 22, radius = 4 })
-      or ui.column({
-          width   = 22,
-          height  = 22,
-          radius  = 4,
-          fill    = "surface_variant/0.65",
-          align   = "center",
-          justify = "center",
-        }, { ui.glyph({ name = "radio", size = 13, color = "outline" }) }),
+    stationArt(art, 22, "radio"),
     ui.column({ flexGrow = 1, gap = 0 }, labels),
   }
   table.insert(parts, ui.button({
@@ -2166,7 +2182,7 @@ renderMiniPlayer = function()
   local parts = {}
   table.insert(parts, ui.glyph({ name = "volume-2", size = 11, color = "primary" }))
   if thumb ~= nil then
-    table.insert(parts, ui.image({ path = thumb, width = 22, height = 22, radius = 4 }))
+    table.insert(parts, stationArt(thumb, 22, "radio"))
   end
   local now = noctalia.nowMs() / 1000
   local wave = (math.sin(now / 0.8 * math.pi) + 1) / 2
