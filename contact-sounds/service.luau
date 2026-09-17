@@ -14,6 +14,14 @@
 -- The sounds live in this runtime's sound bank (API 20). Contacts are loaded
 -- one per update() tick so we stay under the 8-pending-loads cap, and the
 -- "loaded" map is published to noctalia.state for the panel to render.
+--
+-- Override behavior: the host suppresses play() while the "same" loaded buffer
+-- is still active (it compares buffer identity), so a second hit for a contact
+-- whose sound is still playing would otherwise be dropped. To keep every
+-- simultaneous message audible, a hit that lands while this contact's sound may
+-- still be running re-loads one of the contact's ring slots: the re-load mints
+-- a fresh buffer, whose play() is never suppressed and starts from the start,
+-- overriding the still-playing stream.
 
 --!nonstrict
 
@@ -51,6 +59,46 @@ local function slug(name)
     s = s:sub(1, 40)
   end
   return "contact_" .. s
+end
+
+-- ---------------------------------------------------------------------------
+-- Override playback state
+-- ---------------------------------------------------------------------------
+-- The host (API 20) suppresses noctalia.sound.play() only while the *same*
+-- buffer object is still active (compare by buffer identity), so a rapid second
+-- hit for a contact with a still-playing sound is otherwise swallowed. We work
+-- around it with a small ring of sound-bank names per contact: re-loading a
+-- ring slot mints a brand-new buffer, whose play() starts a fresh stream from
+-- the beginning and overrides the previous one.
+--
+-- OVERRIDE_WINDOW_MS  how long after a play we assume that contact's sound may
+--                     still be running; hits landing inside it go through the
+--                     ring (fresh buffer), older ones use the warm buffer at
+--                     zero added latency.
+-- OVERRIDE_SLOTS      distinct buffers kept per contact; once they are all busy
+--                     decoding, extra simultaneous hits queue for the next tick
+--                     instead of being lost.
+local OVERRIDE_WINDOW_MS = 4000
+local OVERRIDE_SLOTS = 3
+
+local function newEntry(name, path)
+  local s = slug(name)
+  local slots = {}
+  for i = 0, OVERRIDE_SLOTS - 1 do
+    local slotName = s
+    if i > 0 then
+      slotName = s .. "~" .. i
+    end
+    slots[i + 1] = { name = slotName, pending = false }
+  end
+  return {
+    loaded = false,
+    name = name,
+    path = path,
+    lastPlayAt = 0,
+    slots = slots,
+    slotIdx = 0,
+  }
 end
 
 -- ---------------------------------------------------------------------------
@@ -133,7 +181,9 @@ local function publishLoaded()
   local merged = {}
   for s, entry in pairs(sounds) do
     if contacts[entry.name] ~= nil then
-      merged[s] = entry
+      -- Publish only the fields the panel consumes; ring-slot bookkeeping stays
+      -- private to this runtime.
+      merged[s] = { loaded = entry.loaded, name = entry.name, path = entry.path }
     end
   end
   for name, rawPath in pairs(contacts) do
@@ -152,6 +202,56 @@ local function publishLoaded()
   requestFilterSync()
 end
 
+-- Fires an audible playback for this hit, overriding a still-playing identical
+-- sound instead of being suppressed by the host. The warm-buffer fast path is
+-- taken only when our last play for this contact is older than the override
+-- window (the previous stream is near-certainly gone). Otherwise a ring slot is
+-- re-loaded to mint a fresh buffer and played from the start. Returns true when
+-- playback started, or a load was accepted (its callback plays); false when
+-- every ring slot is still decoding and the caller should queue a retry.
+local function firePlay(s, resolved, entry)
+  local now = noctalia.nowMs()
+  if entry.loaded and entry.path == resolved then
+    if now - (entry.lastPlayAt or 0) >= OVERRIDE_WINDOW_MS then
+      entry.lastPlayAt = now
+      noctalia.sound.play(s)
+      return true
+    end
+  end
+
+  local slots = entry.slots
+  local idx = entry.slotIdx or 0
+  for _ = 1, #slots do
+    idx = idx % #slots + 1
+    local slot = slots[idx]
+    if not slot.pending then
+      slot.pending = true
+      entry.slotIdx = idx
+      local accepted = noctalia.sound.load(slot.name, resolved, function(ok, err)
+        slot.pending = false
+        entry.lastPlayAt = noctalia.nowMs()
+        if ok then
+          if slot.name == s then
+            entry.loaded = true
+            entry.path = resolved
+            publishLoaded()
+          end
+          noctalia.sound.play(slot.name)
+        else
+          noctalia.log(string.format(
+            "contact-sounds: override load of %s failed: %s", resolved, tostring(err)
+          ))
+        end
+      end)
+      if accepted then
+        return true
+      end
+      slot.pending = false
+    end
+  end
+  return false
+end
+
 -- Re-reads the contacts map into the pending queue (sorted, deterministic)
 -- and drops warm entries that stopped resolving (deleted or empty folder).
 local function queueContacts()
@@ -166,7 +266,11 @@ local function queueContacts()
       if resolved then
         resolvable[s] = true
         local entry = sounds[s]
-        if not (entry and entry.loaded and entry.path == resolved) then
+        if not entry then
+          entry = newEntry(n, resolved)
+          sounds[s] = entry
+        end
+        if not (entry.loaded and entry.path == resolved) then
           table.insert(pending, { name = n, path = resolved, slug = s })
         end
       end
@@ -185,7 +289,9 @@ end
 
 -- Loads one contact's sound. Sound names are scoped to this runtime, and
 -- requesting a name that already has a pending load is rejected, so the queue
--- is drained serially (one per update() tick).
+-- is drained serially (one per update() tick). Retry jobs are plays that could
+-- not start because every ring slot was mid-decode; they are re-fired once a
+-- slot frees up so no simultaneous hit is silently dropped.
 local function pumpLoads()
   if loading then
     return
@@ -194,9 +300,27 @@ local function pumpLoads()
   if not job then
     return
   end
+  if job.retry then
+    local entry = sounds[job.slug]
+    if not entry then
+      entry = newEntry(job.name, job.path)
+      sounds[job.slug] = entry
+    end
+    if not firePlay(job.slug, job.path, entry) then
+      -- every ring slot is still decoding; try again on a later tick
+      table.insert(pending, 1, job)
+    end
+    return
+  end
+
   loading = true
+  local entry = sounds[job.slug] or newEntry(job.name, job.path)
   local accepted = noctalia.sound.load(job.slug, job.path, function(ok, err)
-    sounds[job.slug] = { loaded = ok, name = job.name, path = job.path }
+    local merged = entry
+    merged.loaded = ok
+    merged.name = job.name
+    merged.path = job.path
+    sounds[job.slug] = merged
     if not ok then
       noctalia.log(string.format("contact-sounds: failed to load %s (%s): %s", job.slug, job.path, tostring(err)))
     else
@@ -211,48 +335,23 @@ local function pumpLoads()
   end
 end
 
--- Loads a sound on demand and plays it once ready. Re-loads the slug whenever
--- the resolved file differs from what is warm, so a folder contact always
--- plays its currently-selected (or fresh random) file. startBusy/finishBusy
--- are function()/nil guards set by callers.
-local function playNamed(name, startBusy, finishBusy)
+-- Plays a contact's sound on demand (panel test / IPC). Re-resolves the file
+-- so a folder contact always plays its currently-selected (or fresh random)
+-- member, and reuses the override ring so a repeated test never gets dropped
+-- while one copy is still playing.
+local function playNamed(name)
   local resolved = resolveSoundFile(name)
   if not resolved then
-    if finishBusy then
-      finishBusy()
-    end
     return
   end
   local s = slug(name)
   local entry = sounds[s]
-
-  local function fire(ok)
-    if finishBusy then
-      finishBusy()
-    end
-    if ok then
-      noctalia.sound.play(s)
-    end
+  if not entry then
+    entry = newEntry(name, resolved)
+    sounds[s] = entry
   end
-
-  if entry and entry.loaded and entry.path == resolved then
-    fire(true)
-    return
-  end
-
-  if startBusy then
-    startBusy()
-  end
-  local accepted = noctalia.sound.load(s, resolved, function(ok, err)
-    sounds[s] = { loaded = ok, name = name, path = resolved }
-    publishLoaded()
-    if not ok then
-      noctalia.log(string.format("contact-sounds: failed to load %s (%s): %s", s, resolved, tostring(err)))
-    end
-    fire(ok)
-  end)
-  if not accepted then
-    fire(false)
+  if not firePlay(s, resolved, entry) then
+    table.insert(pending, { retry = true, name = name, path = resolved, slug = s })
   end
 end
 
@@ -334,34 +433,20 @@ local function handleLine(line)
   end
   local s = slug(contact)
   local entry = sounds[s]
+  if not entry then
+    entry = newEntry(contact, resolved)
+    sounds[s] = entry
+  end
 
-  local function played()
+  if firePlay(s, resolved, entry) then
     noctalia.log("contact-sounds: playing " .. contact .. " (from " .. appName .. ")")
-    noctalia.sound.play(s)
     noctalia.state.set("last_hit", contact)
     noctalia.state.set("last_hit_at", noctalia.nowMs() / 1000)
-  end
-
-  if entry and entry.loaded and entry.path == resolved then
-    played()
-    return
-  end
-
-  -- Folder contacts resolve to a (possibly random) file per hit: load that
-  -- file into the same slug, then play. A name already pending here is rare
-  -- (one in-flight hit); the queue drains it one tick later.
-  local accepted = noctalia.sound.load(s, resolved, function(ok, err)
-    sounds[s] = { loaded = ok, name = contact, path = resolved }
-    publishLoaded()
-    if not ok then
-      noctalia.log(string.format("contact-sounds: failed to load %s (%s): %s", s, resolved, tostring(err)))
-      return
-    end
-    played()
-  end)
-  if not accepted then
-    noctalia.log("contact-sounds: hit while " .. s .. " was already loading; retrying next tick")
-    table.insert(pending, { name = contact, path = resolved, slug = s })
+  else
+    -- Every ring slot is still decoding (rapid simultaneous hits): play it once
+    -- a slot frees up, so no incoming message is silently swallowed.
+    noctalia.log("contact-sounds: hit for " .. contact .. " while overriding; queued for next tick")
+    table.insert(pending, { retry = true, name = contact, path = resolved, slug = s })
   end
 end
 
