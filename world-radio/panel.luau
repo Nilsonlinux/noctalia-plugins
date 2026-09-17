@@ -2175,8 +2175,8 @@ renderMiniPlayer = function()
   local nameColor = "on_surface"
   local infoParts = {}
   local stationLabel = playingName
-  if #stationLabel > 35 then
-    stationLabel = string.sub(stationLabel, 1, 35) .. "…"
+  if #stationLabel > 30 then
+    stationLabel = string.sub(stationLabel, 1, 30) .. "…"
   end
   local miniFlag = flagEmoji(playingStation ~= nil and playingStation.countrycode or nil)
   local nameRowParts = {}
