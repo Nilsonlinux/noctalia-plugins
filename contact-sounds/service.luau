@@ -34,6 +34,15 @@ local sounds = {}   -- [slug] = { loaded = bool, name = string, path = string }
 local pending = {}  -- queue of { name, path, slug } drained one per tick
 local loading = false
 
+-- Stream-node cleanup. The host mints a "noctalia-sound" PipeWire node on every
+-- play() and never closes the ones whose playback finished, so the audio mixer
+-- accumulates stale "noctalia-sounds" entries over time. armPrune schedules a
+-- pass of stop_sounds.py once the longest expected playback window expires.
+local soundDurations = {}  -- path -> seconds (probed via ffprobe)
+local lastHitGlobal = 0
+local pruneDeadline = -1
+local armPrune
+
 -- Suppression-filter re-sync bookkeeping. requestFilterSync is assigned below
 -- (after the suppression helpers) and publishLoaded already needs it, so it is
 -- declared up here; by the time queueContacts() runs at the end of this module
@@ -79,9 +88,10 @@ end
 -- hit for a contact with a still-playing sound is otherwise swallowed. We work
 -- around it with a small ring of sound-bank names per contact: every play
 -- re-loads one of the ring slots, minting a fresh buffer whose play() starts a
--- new stream from the beginning and overrides the previous one. (A stream
--- orphaned by the external-stop workaround stays "active" in the host forever,
--- which is why the warm same-buffer path was removed: it could be suppressed.)
+-- new stream from the beginning and overrides the previous one. Each played
+-- slot mints a "noctalia-sound" PipeWire node that the host never closes on its
+-- own; armPrune/pruneNodes destroy them after playback (safe: a later play
+-- mints a fresh node again — verified by destroy -> play -> new audible node).
 --
 -- OVERRIDE_SLOTS     distinct buffers kept per contact; once they are all busy
 --                    decoding, extra simultaneous hits queue for the next tick
@@ -326,6 +336,7 @@ local function firePlay(s, resolved, entry)
             publishLoaded()
           end
           noctalia.sound.play(slot.name)
+          armPrune(resolved)
         else
           noctalia.log(string.format(
             "contact-sounds: override load of %s failed: %s", resolved, tostring(err)
@@ -688,11 +699,10 @@ end
 -- so the panel's stop button asks us to destroy the active "noctalia-sound"
 -- PipeWire nodes (see scripts/stop_sounds.py).
 --
--- The host still tracks the destroyed stream's buffer as "active" afterwards
--- and silently swallows a later play() of that same buffer (no new PipeWire
--- node is created), which left the panel's test muted after a stop. Fix: once
--- the nodes are gone, invalidate every contact so the next play re-loads and
--- mints a fresh buffer that is never suppressed.
+-- Destroying a stream node is safe: the next play() re-loads the ring slot and
+-- mints a brand-new buffer + node (verified: destroy -> play -> new audible
+-- node). Invalidation below just forces that re-load and clears any warm
+-- state so the playback is always audibly fresh.
 local function stopSounds()
   local dir = noctalia.pluginDir()
   if not dir then
@@ -711,6 +721,63 @@ local function stopSounds()
   end)
 end
 
+-- Probes a sound's duration once (via ffprobe) so the prune window matches the
+-- real playback time instead of guessing — avoids cutting long tracks short.
+-- Best-effort: on failure the window falls back to a generous default.
+local ffprobeBusy = false
+local function probeDuration(path)
+  if ffprobeBusy or soundDurations[path] then
+    return
+  end
+  ffprobeBusy = true
+  noctalia.runAsync(string.format(
+    "ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 %s",
+    shellQuote(path)
+  ), function(result)
+    ffprobeBusy = false
+    if result and result.exitCode == 0 and result.stdout then
+      local clean = result.stdout:gsub("%s+", ""):match("^%d+%.?%d*$")
+      local d = clean and tonumber(clean) or nil
+      if d and d > 0 then
+        soundDurations[path] = d
+      end
+    end
+  end)
+end
+
+local PRUNE_HOLD_MS = 20000
+local function holdForPrune(path)
+  local d = soundDurations[path]
+  if d then
+    return math.max(4000, d * 1000 + 1200)
+  end
+  return PRUNE_HOLD_MS
+end
+
+-- Schedules the pipewire node cleanup after a playback. Playback windows are
+-- tracked in wall time and merged to the latest, so overlapping hits postpone
+-- the prune instead of killing a still-playing sound.
+armPrune = function(resolved)
+  lastHitGlobal = noctalia.nowMs()
+  if type(resolved) == "string" then
+    probeDuration(resolved)
+  end
+  pruneDeadline = math.max(pruneDeadline, lastHitGlobal + holdForPrune(resolved))
+end
+
+local function pruneNodes()
+  local dir = noctalia.pluginDir()
+  if not dir then
+    return
+  end
+  local script = dir .. "/scripts/stop_sounds.py"
+  noctalia.runAsync("python3 " .. shellQuote(script), function(result)
+    if result and result.exitCode ~= 0 then
+      noctalia.log("contact-sounds: prune of sound streams failed: " .. tostring(result.stderr))
+    end
+  end)
+end
+
 -- ---------------------------------------------------------------------------
 -- Lifecycle
 -- ---------------------------------------------------------------------------
@@ -726,6 +793,10 @@ end
 function update()
   noctalia.setUpdateInterval(1000)
   pumpLoads()
+  if pruneDeadline > 0 and noctalia.nowMs() >= pruneDeadline then
+    pruneDeadline = -1
+    pruneNodes()
+  end
   if filterDirty then
     filterDirty = false
     syncSystemSoundFilter()
