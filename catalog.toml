@@ -25,7 +25,7 @@ tags = ["network", "indicator", "bar", "panel", "service"]
 plugin_api = 14
 version = "1.0.2"
 updated_at = 1788554504
-rev = "6e2760df7702fc83781e7bea03cff8457dcf5696"
+rev = "a8df42641230b6a8743859c8f5b7f5bc5bb2ba59"
 
 [[plugin.release]]
 plugin_api = 14
@@ -50,7 +50,7 @@ tags = ["utility", "indicator", "panel", "bar", "service"]
 plugin_api = 14
 version = "1.2.1"
 updated_at = 1789252056
-rev = "6e2760df7702fc83781e7bea03cff8457dcf5696"
+rev = "a8df42641230b6a8743859c8f5b7f5bc5bb2ba59"
 
 [[plugin.release]]
 plugin_api = 14
@@ -61,8 +61,8 @@ rev = "5acc5456c8a0a142b18387b15c021eb0f7c42bf0"
 [[plugin]]
 id = "nilsonlinux/inventory-manager"
 name = "Inventory Manager"
-version = "1.0.0"
-updated_at = 1788127260
+version = "1.0.1"
+updated_at = 1788559302
 added_at = 1788127260
 author = "Nilsonlinux"
 license = "MIT"
@@ -73,15 +73,15 @@ tags = ["utility", "productivity", "service", "panel", "bar"]
 
 [[plugin.release]]
 plugin_api = 15
-version = "1.0.0"
-updated_at = 1788127260
-rev = "6e2760df7702fc83781e7bea03cff8457dcf5696"
+version = "1.0.1"
+updated_at = 1788559302
+rev = "a8df42641230b6a8743859c8f5b7f5bc5bb2ba59"
 
 [[plugin.release]]
 plugin_api = 14
-version = "1.0.1"
-updated_at = 1788559302
-rev = "e57c7091bca5a227c86bfd79335d4bc044d96489"
+version = "1.0.0"
+updated_at = 1788127260
+rev = "b2cd262c1fa9b8bca67825da082400443ae2bc72"
 
 [[plugin]]
 id = "nilsonlinux/speedtest-meter"
@@ -100,7 +100,7 @@ tags = ["network", "indicator", "bar", "panel"]
 plugin_api = 18
 version = "1.5.1"
 updated_at = 1789508777
-rev = "6e2760df7702fc83781e7bea03cff8457dcf5696"
+rev = "a8df42641230b6a8743859c8f5b7f5bc5bb2ba59"
 
 [[plugin.release]]
 plugin_api = 14
@@ -125,7 +125,7 @@ tags = ["audio", "utility", "bar", "panel", "service"]
 plugin_api = 20
 version = "1.5.1"
 updated_at = 1789730313
-rev = "6e2760df7702fc83781e7bea03cff8457dcf5696"
+rev = "a8df42641230b6a8743859c8f5b7f5bc5bb2ba59"
 
 [[plugin.release]]
 plugin_api = 20
@@ -150,7 +150,7 @@ tags = ["audio", "music", "network", "panel", "bar", "utility"]
 plugin_api = 24
 version = "1.0.7"
 updated_at = 1789661451
-rev = "6e2760df7702fc83781e7bea03cff8457dcf5696"
+rev = "a8df42641230b6a8743859c8f5b7f5bc5bb2ba59"
 
 [[plugin.release]]
 plugin_api = 24
