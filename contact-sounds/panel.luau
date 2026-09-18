@@ -790,7 +790,7 @@ render = function()
       })
     end
   else
-    body = ui.scroll({ gap = 6, flexGrow = 1 }, rows)
+    body = ui.scroll({ gap = 2, flexGrow = 1 }, rows)
   end
 
   local function openForm()
