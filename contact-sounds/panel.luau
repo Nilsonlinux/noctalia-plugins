@@ -100,7 +100,13 @@ end
 -- Authoritative contact tables published by the service through noctalia.state
 -- ("contacts.data"). Before the first publish (or the fallback label below) the
 -- panel reads the same keys from config so the first frame is never empty.
-local data = nil -- { contacts, kinds, images, folder_sounds, order, sound_folders }
+--
+-- state.watch only fires on *changes*, so a panel runtime created after the
+-- service published (e.g. after a plugin reload) would never learn about the
+-- current data and would fall back to the stale settings.toml config — hiding
+-- every contact that only exists in the service's state.json. Seed from the
+-- in-memory channel up front; the watch below covers future publishes.
+local data = noctalia.state.get("contacts.data") -- { contacts, kinds, images, folder_sounds, order, sound_folders }
 
 local function cloneMap(t)
   local out = {}
@@ -121,7 +127,7 @@ end
 -- The six mutable tables with the current data; used both for rendering and
 -- as a base to build the next state after a mutation.
 local function dataTables()
-  local d = data or {}
+  local d = data or noctalia.state.get("contacts.data") or {}
   return {
     contacts      = d.contacts or cfgMap("contacts"),
     kinds         = d.kinds or cfgMap("contact_kinds"),
@@ -744,9 +750,13 @@ render = function()
 
   local function openForm()
     modeDraft = "folder"
+    nameDraft = ""
     pathDraft = ""
     soundDraft = ""
+    imageDraft = ""
+    kindDraft = "contact"
     pathInputMode = "existing"
+    editingName = nil
     if #knownFolders() > 0 then
       pathDraft = knownFolders()[1]
     end
