@@ -141,9 +141,15 @@ end
 -- Builds the next state from copies of the current one after a mutation,
 -- updates the published copy optimistically (so the row moves instantly) and
 -- hands the full tables to the service via noctalia.state, which persists and
--- republishes — the panel stays open.
+-- republishes — the panel stays open. `seq` lets the service ignore a command
+-- that gets delivered twice (around a service restart), so the "saved"
+-- notification fires exactly once per action. The counter is kept in the state
+-- channel (which survives a panel reload) so it never repeats across reloads.
+local cmdSeq = noctalia.state.get("contacts.cmd_seq") or 0
 local function sendMutate(next)
-  noctalia.state.set("contacts.cmd", { op = "mutate", data = next })
+  cmdSeq = cmdSeq + 1
+  noctalia.state.set("contacts.cmd_seq", cmdSeq)
+  noctalia.state.set("contacts.cmd", { op = "mutate", data = next, seq = cmdSeq })
   data = next
   render()
 end

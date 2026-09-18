@@ -40,6 +40,16 @@ local loading = false
 -- the assignment has happened.
 local filterDirty = false
 local requestFilterSync
+-- Verb last sent to sync_filter.sh. Skipping the write + config-reload when the
+-- filter content is unchanged breaks the reload loop that otherwise kept the
+-- plugin reloading (and its service restarting) every update tick, which let a
+-- single panel save be processed/announced more than once.
+local lastFilterKey = ""
+-- Sequence assigned by the panel to each mutation; a command delivered twice
+-- (e.g. across the service restarts that a config-reload triggers) is applied
+-- and announced only once. The last processed sequence is kept in the state
+-- channel — which survives service restarts — so a freshly started runtime can
+-- still recognize (and skip) a mutation it already handled.
 
 local function tr(key)
   return noctalia.tr(key)
@@ -561,42 +571,48 @@ local function syncSystemSoundFilter()
   local apps = noctalia.getConfig("only_apps") or {}
   local names = loadedContactNames()
 
+  -- Build the exact command line that reproduces the wanted filter file. The
+  -- file content is fully determined by it, so an unchanged verb means the
+  -- filter already matches and there is nothing to write or reload.
+  local verb
+  if sensitive or #names == 0 then
+    verb = "off"
+  else
+    verb = "on " .. shellQuote(buildContentRegex(names))
+    if #apps > 0 then
+      local listed = {}
+      for _, app in ipairs(apps) do
+        local a = tostring(app)
+        if a ~= "" then
+          listed[#listed + 1] = a
+        end
+      end
+      table.sort(listed)
+      if #listed > 0 then
+        verb = verb .. " --apps " .. shellQuote(table.concat(listed, FS))
+      end
+    else
+      verb = verb .. " --names " .. shellQuote(table.concat(names, FS))
+    end
+  end
+
+  if verb == lastFilterKey then
+    return
+  end
+  lastFilterKey = verb
+
   local dir = noctalia.pluginDir()
   if not dir then
     return
   end
   local script = dir .. "/scripts/sync_filter.sh"
 
-  local function run(verb)
-    noctalia.runAsync("bash " .. shellQuote(script) .. " " .. verb, function(result)
-      if result and result.exitCode ~= 0 then
-        noctalia.log("contact-sounds: sync_filter.sh failed: " .. tostring(result.stderr))
-      end
-    end)
-    noctalia.runAsync("noctalia msg config-reload")
-  end
-
-  if sensitive or #names == 0 then
-    run("off")
-    return
-  end
-
-  local verb = "on " .. shellQuote(buildContentRegex(names))
-  if #apps > 0 then
-    local listed = {}
-    for _, app in ipairs(apps) do
-      local a = tostring(app)
-      if a ~= "" then
-        listed[#listed + 1] = a
-      end
+  noctalia.runAsync("bash " .. shellQuote(script) .. " " .. verb, function(result)
+    if result and result.exitCode ~= 0 then
+      noctalia.log("contact-sounds: sync_filter.sh failed: " .. tostring(result.stderr))
     end
-    if #listed > 0 then
-      verb = verb .. " --apps " .. shellQuote(table.concat(listed, FS))
-    end
-  else
-    verb = verb .. " --names " .. shellQuote(table.concat(names, FS))
-  end
-  run(verb)
+  end)
+  noctalia.runAsync("noctalia msg config-reload")
 end
 
 requestFilterSync = function()
@@ -628,13 +644,22 @@ noctalia.state.watch("contacts.cmd", function(cmd)
     return
   end
   if cmd.op == "mutate" then
-    if applyData(cmd.data) then
-      if not saveData() then
-        noctalia.log("contact-sounds: failed to persist state.json")
+    local processed = noctalia.state.get("contacts.cmd_processed")
+    if type(cmd.seq) ~= "number"
+      or processed == nil
+      or cmd.seq > processed
+    then
+      if applyData(cmd.data) then
+        if not saveData() then
+          noctalia.log("contact-sounds: failed to persist state.json")
+        end
+        if type(cmd.seq) == "number" then
+          noctalia.state.set("contacts.cmd_processed", cmd.seq)
+        end
+        noctalia.notify(tr("panel.title"), tr("panel.saved"))
+        queueContacts()
+        publishData()
       end
-      noctalia.notify(tr("panel.title"), tr("panel.saved"))
-      queueContacts()
-      publishData()
     end
   elseif cmd.op == "reload" then
     loadData()
