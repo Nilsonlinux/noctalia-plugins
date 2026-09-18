@@ -75,6 +75,13 @@ description_key = "settings.show_widget.description"
 default         = true
 
 [[setting]]
+key             = "show_sound_name"
+type            = "bool"
+label_key       = "settings.show_sound_name.label"
+description_key = "settings.show_sound_name.description"
+default         = true
+
+[[setting]]
 key             = "match_case_sensitive"
 type            = "bool"
 label_key       = "settings.match_case_sensitive.label"

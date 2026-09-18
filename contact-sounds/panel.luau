@@ -242,6 +242,27 @@ local function soundPathsToProbe()
   return out
 end
 
+-- Last path component: the file name shown to the user.
+local function fileName(path)
+  local base = (path or ""):match("([^/]+)$")
+  return base or path or ""
+end
+
+-- Sound this contact actually plays, shown as a small caption under the name.
+-- Folders show the picked member, or the folder name when picking randomly.
+local function contactSoundName(contact)
+  if contact.isFolder then
+    if contact.folderSound and contact.folderSound ~= "" then
+      return fileName(contact.folderSound)
+    end
+    if #(contact.sounds or {}) == 1 then
+      return fileName(contact.sounds[1])
+    end
+    return tr("panel.random_sound")
+  end
+  return fileName(contact.path)
+end
+
 -- Duration of the sound this contact actually plays, or nil while still
 -- unknown. For a folder with a picked sound only that file counts; without a
 -- pick the longest member is used as the worst case for the random choice.
@@ -662,6 +683,7 @@ end
 render = function()
   ensureDurations()
   local list = contacts()
+  local showSoundName = noctalia.getConfig("show_sound_name") ~= false
   local rows = {}
 
   for i, contact in ipairs(list) do
@@ -671,11 +693,28 @@ render = function()
 
     -- Main line: drag handle + avatar + contact name + action buttons. The
     -- handle is a direct child so `previewAncestor = 1` lifts the row card.
+    local nameChildren = {
+      ui.label({ text = contact.name, fontWeight = "bold", fontSize = 16, maxLines = 1 }),
+    }
+    if showSoundName then
+      table.insert(nameChildren, ui.column({ align = "start" }, {
+        ui.row({
+          gap       = 6,
+          align     = "center",
+          fill      = "surface_variant/0.5",
+          radius    = 999,
+          paddingH  = 10,
+          paddingV  = 3,
+        }, {
+          ui.label({ text = contactSoundName(contact), fontSize = 11, color = "on_surface_variant", maxLines = 1 }),
+        }),
+      }))
+    end
     local mainRowChildren = {
       dragHandle(contact, i),
       ui.row({ gap = 8, align = "center", flexGrow = 1, minWidth = 0 }, {
         avatarFor(contact),
-        ui.label({ text = contact.name, fontWeight = "bold", fontSize = 16, maxLines = 1 }),
+        ui.column({ gap = 4, flexGrow = 1, minWidth = 0 }, nameChildren),
       }),
     }
 

@@ -37,11 +37,16 @@ local loading = false
 -- Stream-node cleanup. The host mints a "noctalia-sound" PipeWire node on every
 -- play() and never closes the ones whose playback finished, so the audio mixer
 -- accumulates stale "noctalia-sounds" entries over time. armPrune schedules a
--- pass of stop_sounds.py once the longest expected playback window expires.
-local soundDurations = {}  -- path -> seconds (probed via ffprobe)
+-- pass of stop_sounds.py once the longest expected playback window expires,
+-- using the probed file duration; files with unknown duration are never pruned.
+local soundDurations = {}       -- path -> seconds (probed via ffprobe)
+local lastPlayStartByPath = {}  -- path -> ms of the most recent play
+local probeFailedPaths = {}     -- paths ffprobe rejected (never auto-prune)
 local lastHitGlobal = 0
 local pruneDeadline = -1
 local armPrune
+local holdForPrune
+local setPruneDeadline
 
 -- Suppression-filter re-sync bookkeeping. requestFilterSync is assigned below
 -- (after the suppression helpers) and publishLoaded already needs it, so it is
@@ -667,7 +672,6 @@ noctalia.state.watch("contacts.cmd", function(cmd)
         if type(cmd.seq) == "number" then
           noctalia.state.set("contacts.cmd_processed", cmd.seq)
         end
-        noctalia.notify(tr("panel.title"), tr("panel.saved"))
         queueContacts()
         publishData()
       end
@@ -722,47 +726,69 @@ local function stopSounds()
 end
 
 -- Probes a sound's duration once (via ffprobe) so the prune window matches the
--- real playback time instead of guessing — avoids cutting long tracks short.
--- Best-effort: on failure the window falls back to a generous default.
+-- real playback time instead of guessing. A probed duration lets us destroy the
+-- leftover stream node after the audio has actually finished; an unprobeable
+-- file is never auto-pruned, so a long or unreadable track is never cut short
+-- and never torn down while still rendering.
 local ffprobeBusy = false
+local probeTarget = nil
 local function probeDuration(path)
-  if ffprobeBusy or soundDurations[path] then
+  if ffprobeBusy or soundDurations[path] or probeFailedPaths[path] then
     return
   end
   ffprobeBusy = true
+  probeTarget = path
   noctalia.runAsync(string.format(
     "ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 %s",
     shellQuote(path)
   ), function(result)
     ffprobeBusy = false
+    local startedAt = lastPlayStartByPath[probeTarget]
     if result and result.exitCode == 0 and result.stdout then
       local clean = result.stdout:gsub("%s+", ""):match("^%d+%.?%d*$")
       local d = clean and tonumber(clean) or nil
       if d and d > 0 then
-        soundDurations[path] = d
+        soundDurations[probeTarget] = d
+        if startedAt then
+          setPruneDeadline(startedAt + holdForPrune(probeTarget))
+        end
+        return
       end
     end
+    probeFailedPaths[probeTarget] = true
   end)
 end
 
-local PRUNE_HOLD_MS = 20000
-local function holdForPrune(path)
-  local d = soundDurations[path]
-  if d then
-    return math.max(4000, d * 1000 + 1200)
-  end
-  return PRUNE_HOLD_MS
+-- Persisted prune deadline: survives service restarts (the config-reload storm
+-- after an action recreates the runtime), so a scheduled cleanup is never lost.
+setPruneDeadline = function(ms)
+  pruneDeadline = math.max(pruneDeadline, ms)
+  noctalia.state.set("contacts.prune_at", pruneDeadline)
 end
 
--- Schedules the pipewire node cleanup after a playback. Playback windows are
--- tracked in wall time and merged to the latest, so overlapping hits postpone
--- the prune instead of killing a still-playing sound.
+holdForPrune = function(path)
+  local d = soundDurations[path]
+  if not d then
+    return nil
+  end
+  return math.max(5000, d * 1000 + 2500)
+end
+
+-- Schedules the pipewire node cleanup only when the file's real duration is
+-- known, so the node is torn down strictly after the audio has finished —
+-- never mid-play. Overlapping hits merge the deadline to the latest window.
 armPrune = function(resolved)
+  if type(resolved) ~= "string" then
+    return
+  end
   lastHitGlobal = noctalia.nowMs()
-  if type(resolved) == "string" then
+  lastPlayStartByPath[resolved] = lastHitGlobal
+  local hold = holdForPrune(resolved)
+  if hold then
+    setPruneDeadline(lastHitGlobal + hold)
+  else
     probeDuration(resolved)
   end
-  pruneDeadline = math.max(pruneDeadline, lastHitGlobal + holdForPrune(resolved))
 end
 
 local function pruneNodes()
@@ -790,11 +816,19 @@ if not monitorStarted then
   noctalia.log("contact-sounds: could not start dbus-monitor stream")
 end
 
+-- Re-arm a cleanup that was scheduled by a previous runtime (survives the
+-- config-reload restarts); an already-past deadline is pruned on the next tick.
+local persistedPrune = noctalia.state.get("contacts.prune_at")
+if type(persistedPrune) == "number" then
+  pruneDeadline = math.max(pruneDeadline, persistedPrune)
+end
+
 function update()
   noctalia.setUpdateInterval(1000)
   pumpLoads()
   if pruneDeadline > 0 and noctalia.nowMs() >= pruneDeadline then
     pruneDeadline = -1
+    noctalia.state.set("contacts.prune_at", nil)
     pruneNodes()
   end
   if filterDirty then

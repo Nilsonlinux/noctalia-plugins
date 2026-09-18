@@ -35,7 +35,7 @@
         "play_tooltip": "Tocar o som desta entrada",
         "reorder_tooltip": "Arraste para reordenar a lista",
         "save_button": "Salvar",
-        "saved": "Lista de contatos atualizada",
+        "random_sound": "Som aleatório da pasta",
         "settings_tooltip": "Abrir configurações do plugin",
         "stop_tooltip": "Parar o som que está tocando",
         "title": "Sons de Contato"
@@ -72,6 +72,10 @@
         "only_apps": {
             "description": "Lista opcional de nomes de aplicativos de notificação para restringir a combinação. Deixe vazio para combinar notificações de qualquer aplicativo.",
             "label": "Somente estes aplicativos"
+        },
+        "show_sound_name": {
+            "description": "Quando desligado, a cápsula com o nome do som abaixo de cada nome é ocultada.",
+            "label": "Mostrar nome do som"
         },
         "show_widget": {
             "description": "Quando desligado, o sino é ocultado da barra.",
