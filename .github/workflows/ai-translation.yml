@@ -34,14 +34,14 @@ jobs:
       github.event_name == 'issues' ||
       github.event_name == 'pull_request' ||
       github.event_name == 'schedule' ||
-      (github.event_name == 'issue_comment' && 
+      (github.event_name == 'issue_comment' &&
        (contains(github.event.comment.body, '/corrigir') || contains(github.event.comment.body, '/correct')))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: AI Correction for single event
+      - name: AI Correction (event-based)
         id: ai_single
         if: github.event_name != 'schedule'
         uses: actions/ai-inference@v1
@@ -64,44 +64,38 @@ jobs:
             Texto a ser corrigido:
             ${{ github.event_name == 'workflow_dispatch' && inputs.text || github.event.issue.body || github.event.pull_request.body || github.event.comment.body }}
 
-      - name: Comment corrected text (single event)
+      - name: Comment suggestion (event-based)
         if: github.event_name != 'schedule' && steps.ai_single.outputs.response != ''
         uses: actions/github-script@v7
+        env:
+          AI_RESPONSE: ${{ steps.ai_single.outputs.response }}
         with:
           script: |
-            const corrected = `${{ steps.ai_single.outputs.response }}`.trim();
-            const eventName = context.eventName;
+            const corrected = process.env.AI_RESPONSE.trim();
+            if (!corrected) return;
+
             let number;
+            if (context.eventName === 'issues') number = context.payload.issue.number;
+            if (context.eventName === 'pull_request') number = context.payload.pull_request.number;
+            if (context.eventName === 'issue_comment') number = context.payload.issue.number;
 
-            if (eventName === 'issues') number = context.payload.issue.number;
-            if (eventName === 'pull_request') number = context.payload.pull_request.number;
-            if (eventName === 'issue_comment') number = context.payload.issue.number;
-
-            if (!number || !corrected) return;
-
-            const body = `## Sugestão de correção (IA)\n\n` + 
-              '```markdown\n' + 
-              corrected + 
-              '\n```';
+            if (!number) return;
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: number,
-              body
+              body: '## Sugestão de correção (IA)\n\n```markdown\n' + corrected + '\n```',
             });
 
-      - name: Correct all open issues and PRs (scheduled)
+      - name: AI Correction (scheduled - all open items)
         if: github.event_name == 'schedule'
         uses: actions/github-script@v7
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const model = 'openai/gpt-4.1-mini';
-            const cooldownDays = 7;
-            const cooldownMs = cooldownDays * 24 * 60 * 60 * 1000;
+            const cooldownMs = 7 * 24 * 60 * 60 * 1000;
 
             const items = await github.paginate(github.rest.issues.listForRepo, {
               owner,
@@ -110,24 +104,19 @@ jobs:
               per_page: 100,
             });
 
-            const systemPrompt = `Você é um revisor técnico e corretor de textos.
-
-Sua tarefa é corrigir gramática, ortografia, pontuação e clareza do texto fornecido, mantendo o sentido original intacto.
-
-Regras:
-- Corrija para português brasileiro (pt-BR), a menos que o texto já esteja majoritariamente em outro idioma.
-- Mantenha termos técnicos, nomes de arquivos, caminhos, comandos, blocos de código, links, emojis e identificadores exatamente como estão.
-- Preserve a formatação Markdown (títulos, listas, tabelas, blocos de código, citações).
-- Não adicione explicações, apenas retorne o texto corrigido.
-- Seja objetivo e conciso.`;
+            const systemPrompt = 'Você é um revisor técnico e corretor de textos.\n\n' +
+              'Sua tarefa é corrigir gramática, ortografia, pontuação e clareza do texto fornecido, mantendo o sentido original intacto.\n\n' +
+              'Regras:\n' +
+              '- Corrija para português brasileiro (pt-BR), a menos que o texto já esteja majoritariamente em outro idioma.\n' +
+              '- Mantenha termos técnicos, nomes de arquivos, caminhos, comandos, blocos de código, links, emojis e identificadores exatamente como estão.\n' +
+              '- Preserve a formatação Markdown (títulos, listas, tabelas, blocos de código, citações).\n' +
+              '- Não adicione explicações, apenas retorne o texto corrigido.\n' +
+              '- Seja objetivo e conciso.';
 
             for (const item of items) {
-              const isPR = Boolean(item.pull_request);
+              const isPR = !!item.pull_request;
               const number = item.number;
-              const title = item.title || '';
-              const body = item.body || '';
-
-              const textToCorrect = `Título: ${title}\n\n${body}`.trim();
+              const textToCorrect = ('Título: ' + (item.title || '') + '\n\n' + (item.body || '')).trim();
               if (!textToCorrect) continue;
 
               try {
@@ -138,27 +127,27 @@ Regras:
                   per_page: 50,
                 });
 
-                const hasRecentAiComment = comments.data.some((c) => {
-                  const isBot = c.user?.type === 'Bot' || c.user?.login?.endsWith('[bot]');
-                  const hasMarker = c.body?.includes('Sugestão de correção (IA)');
-                  const createdAt = new Date(c.created_at).getTime();
-                  return isBot && hasMarker && createdAt > Date.now() - cooldownMs;
+                const hasRecent = comments.data.some((c) => {
+                  const isBot = c.user?.type === 'Bot' || (c.user?.login || '').endsWith('[bot]');
+                  if (!isBot) return false;
+                  if (!c.body?.includes('Sugestão de correção (IA)')) return false;
+                  return new Date(c.created_at).getTime() > Date.now() - cooldownMs;
                 });
 
-                if (hasRecentAiComment) {
-                  core.info(`${isPR ? 'PR' : 'Issue'} #${number}: pulado (comentário IA recente)`);
+                if (hasRecent) {
+                  core.info((isPR ? 'PR' : 'Issue') + ' #' + number + ': pulado (comentário IA recente)');
                   continue;
                 }
 
-                const response = await fetch('https://models.github.ai/inference/chat/completions', {
+                const res = await fetch('https://models.github.ai/inference/chat/completions', {
                   method: 'POST',
                   headers: {
-                    Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+                    Authorization: 'Bearer ' + process.env.GITHUB_TOKEN,
                     'Content-Type': 'application/json',
-                    'User-Agent': 'github-actions-ai-correction',
+                    'User-Agent': 'ai-correction-action',
                   },
                   body: JSON.stringify({
-                    model,
+                    model: model,
                     messages: [
                       { role: 'system', content: systemPrompt },
                       { role: 'user', content: textToCorrect },
@@ -168,40 +157,28 @@ Regras:
                   }),
                 });
 
-                if (!response.ok) {
-                  const errText = await response.text();
-                  core.warning(`${isPR ? 'PR' : 'Issue'} #${number}: falha na API (${response.status}) - ${errText}`);
+                if (!res.ok) {
+                  const err = await res.text();
+                  core.warning((isPR ? 'PR' : 'Issue') + ' #' + number + ': falha API (' + res.status + ')');
                   continue;
                 }
 
-                const data = await response.json();
+                const data = await res.json();
                 const corrected = data.choices?.[0]?.message?.content?.trim();
-
-                if (!corrected) {
-                  core.info(`${isPR ? 'PR' : 'Issue'} #${number}: sem resposta da IA`);
+                if (!corrected || corrected === textToCorrect) {
+                  core.info((isPR ? 'PR' : 'Issue') + ' #' + number + ': sem alterações');
                   continue;
                 }
-
-                if (corrected === textToCorrect) {
-                  core.info(`${isPR ? 'PR' : 'Issue'} #${number}: sem alterações necessárias`);
-                  continue;
-                }
-
-                const commentBody =
-                  `## Sugestão de correção (IA)\n\n` +
-                  '```markdown\n' +
-                  corrected +
-                  '\n```';
 
                 await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
+                  owner: owner,
+                  repo: repo,
                   issue_number: number,
-                  body: commentBody,
+                  body: '## Sugestão de correção (IA)\n\n```markdown\n' + corrected + '\n```',
                 });
 
-                core.info(`${isPR ? 'PR' : 'Issue'} #${number}: sugestão de correção publicada`);
-              } catch (error) {
-                core.warning(`${isPR ? 'PR' : 'Issue'} #${number}: erro - ${error.message}`);
+                core.info((isPR ? 'PR' : 'Issue') + ' #' + number + ': corrigido e comentado');
+              } catch (e) {
+                core.warning((isPR ? 'PR' : 'Issue') + ' #' + number + ': erro - ' + e.message);
               }
             }
