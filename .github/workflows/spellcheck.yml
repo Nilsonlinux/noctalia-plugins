@@ -1,0 +1,50 @@
+name: Spell Check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.md'
+      - '**/*.txt'
+      - '**/*.json'
+      - '**/*.toml'
+      - '**/*.yml'
+      - '**/*.yaml'
+      - '.cspell.json'
+      - '.github/workflows/spellcheck.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.md'
+      - '**/*.txt'
+      - '**/*.json'
+      - '**/*.toml'
+      - '**/*.yml'
+      - '**/*.yaml'
+      - '.cspell.json'
+      - '.github/workflows/spellcheck.yml'
+  workflow_dispatch:
+
+jobs:
+  spellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run cspell
+        uses: streetsidesoftware/cspell-action@v6
+        with:
+          config: '.cspell.json'
+          files: |
+            **/*.{md,txt,json,toml,yml,yaml}
+          exclude: |
+            node_modules
+            .git
+            dist
+            build
+            target
+            __pycache__
+            plugins/**/node_modules
+            plugins/**/dist
+            plugins/**/build

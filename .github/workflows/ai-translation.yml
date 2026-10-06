@@ -1,0 +1,61 @@
+name: AI Translation & Correction
+
+on:
+  issues:
+    types: [opened, edited]
+  pull_request:
+    types: [opened, edited]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      text:
+        description: 'Text to translate/correct'
+        required: false
+        type: string
+      target_language:
+        description: 'Target language (e.g., pt-BR, en-US)'
+        required: false
+        default: 'pt-BR'
+        type: string
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+  models: read
+
+jobs:
+  translate:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'issues' ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' && 
+       (contains(github.event.comment.body, '/corrigir') || contains(github.event.comment.body, '/correct')))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: AI Translation & Correction
+        id: ai
+        uses: actions/ai-inference@v1
+        with:
+          model: 'openai/gpt-4.1-mini'
+          max-tokens: 2000
+          prompt: |
+            Você é um revisor técnico e corretor de textos.
+
+            Sua tarefa é corrigir gramática, ortografia, pontuação e clareza do texto fornecido,
+            mantendo o sentido original intacto.
+
+            Regras:
+            - Corrija para português brasileiro (pt-BR), a menos que o texto já esteja majoritariamente em outro idioma e seja explicitamente solicitado o contrário.
+            - Mantenha termos técnicos, nomes de arquivos, caminhos, comandos, blocos de código, links, emojis e identificadores exatamente como estão.
+            - Preserve a formatação Markdown (títulos, listas, tabelas, blocos de código, citações).
+            - Não adicione explicações, apenas retorne o texto corrigido.
+            - Seja objetivo e conciso.
+
+            Texto a ser corrigido:
+            ${{ github.event_name == 'workflow_dispatch' && inputs.text || github.event.issue.body || github.event.pull_request.body || github.event.comment.body }}
