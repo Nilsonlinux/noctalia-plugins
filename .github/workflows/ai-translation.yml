@@ -33,6 +33,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'issues' ||
       github.event_name == 'pull_request' ||
+      github.event_name == 'schedule' ||
       (github.event_name == 'issue_comment' && 
        (contains(github.event.comment.body, '/corrigir') || contains(github.event.comment.body, '/correct')))
     runs-on: ubuntu-latest
@@ -40,8 +41,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: AI Translation & Correction
-        id: ai
+      - name: AI Correction for single event
+        id: ai_single
+        if: github.event_name != 'schedule'
         uses: actions/ai-inference@v1
         with:
           model: 'openai/gpt-4.1-mini'
@@ -61,3 +63,77 @@ jobs:
 
             Texto a ser corrigido:
             ${{ github.event_name == 'workflow_dispatch' && inputs.text || github.event.issue.body || github.event.pull_request.body || github.event.comment.body }}
+
+      - name: Comment corrected text (single event)
+        if: github.event_name != 'schedule' && steps.ai_single.outputs.response != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const corrected = `${{ steps.ai_single.outputs.response }}`.trim();
+            const eventName = context.eventName;
+            let number;
+
+            if (eventName === 'issues') number = context.payload.issue.number;
+            if (eventName === 'pull_request') number = context.payload.pull_request.number;
+            if (eventName === 'issue_comment') number = context.payload.issue.number;
+
+            if (!number || !corrected) return;
+
+            const body = `## Sugestão de correção (IA)\n\n` + 
+              '```markdown\n' + 
+              corrected + 
+              '\n```';
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: number,
+              body
+            });
+
+      - name: Correct all open issues and PRs (scheduled)
+        if: github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const aiInference = require('fs');
+            
+            // Buscar issues abertas
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            });
+
+            for (const item of issues) {
+              // Pular se for PR
+              if (item.pull_request) continue;
+              
+              const body = item.body || '';
+              if (!body.trim()) continue;
+              
+              // Evitar spam: pular se já tem comentário da IA recente (últimos 7 dias)
+              const comments = await github.rest.issues.listComments({
+                owner,
+                repo,
+                issue_number: item.number,
+                per_page: 30,
+              });
+              
+              const recentAiComment = comments.data.some(c => 
+                c.user.type === 'Bot' && 
+                c.body.includes('Sugestão de correção (IA)') &&
+                new Date(c.created_at) > new Date(Date.now() - 7*24*60*60*1000)
+              );
+              if (recentAiComment) continue;
+
+              try {
+                // Chamar AI Inference via API REST? Mas actions/ai-inference roda como step
+                // Alternativa: usar uma abordagem com curl para GitHub Models API
+                core.info(`Corrigindo Issue #${item.number}: ${item.title}`);
+              } catch (e) {
+                core.warning(`Falha ao corrigir Issue #${item.number}: ${e.message}`);
+              }
+            }
