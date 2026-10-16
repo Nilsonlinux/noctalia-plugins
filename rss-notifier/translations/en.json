@@ -47,6 +47,10 @@
     "show_feed_images": {
       "description": "Show the feed's photo (logo) on the cards, with the item's cover or the site's favicon as fallback.",
       "label": "Show feed images"
+    },
+    "feeds": {
+      "description": "List of feed URLs to monitor (can be set declaratively).",
+      "label": "Feeds"
     }
   },
   "widget": {

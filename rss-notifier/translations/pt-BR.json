@@ -47,6 +47,10 @@
     "show_feed_images": {
       "description": "Mostra a foto do feed (logo) nas cards, com a capa do item ou o favicon do site como alternativa.",
       "label": "Mostrar imagens dos feeds"
+    },
+    "feeds": {
+      "description": "Lista de URLs de feeds a serem monitorados (pode ser definida declarativamente).",
+      "label": "Feeds"
     }
   },
   "widget": {
