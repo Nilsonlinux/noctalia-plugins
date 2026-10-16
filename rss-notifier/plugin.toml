@@ -49,7 +49,7 @@ default         = true
 
 [[setting]]
 key             = "feeds"
-type            = "list"
+type            = "string_list"
 label_key       = "settings.feeds.label"
 description_key = "settings.feeds.description"
 default         = []
