@@ -33,6 +33,28 @@ the **[thumbnail generator](https://assets.noctalia.dev/plugins/thumbnail-genera
 your plugin, set the title, category tag and accent color, then export the 960×540 WebP and commit it as
 `<plugin>/thumbnail.webp`.
 
+### Translations
+
+> [!WARNING]
+> **Editing existing translations must be done on [Noctalia Translate](https://i18n.noctalia.dev)**, the single
+> source of truth for all translated strings. Do not edit the strings of an existing translation in the locale JSON
+> files here: they will most likely be overwritten on the next i18n pull.
+
+Write `translations/en.json` only. Every `label_key` and `description_key` in `plugin.toml` must resolve to a key in
+it, and CI checks this. Do not add machine-translated locales; other languages are handled separately.
+
+The plugins here are also published in the community catalog, so their strings are translated in the shared
+`community-plugins` project. To sync the latest translated locales in a working checkout, run:
+
+```sh
+./.tools/i18n-pull.sh
+```
+
+The command asks for confirmation and overwrites the non-English locale files returned by the translation service.
+`translations/en.json` is the authoritative source in this repository and is never overwritten here. The command does
+not delete local locale files that are absent from the export, and it skips plugins the translation service knows
+about that this repository does not ship. Review the resulting diff before committing anything.
+
 ### Tags
 
 The `tags` in `plugin.toml` are used for catalog search. Tags must be lowercase and selected from this list:
