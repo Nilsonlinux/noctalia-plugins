@@ -16,6 +16,8 @@ local songPath = dataDir ~= "" and (dataDir .. "/song.txt") or ""
 
 local appliedCover = nil
 local appliedSong = nil
+local appliedTitle = nil
+local stationName = ""
 
 local function loadCovers()
   local list = {}
@@ -69,6 +71,24 @@ local function writeNow(pos)
   os.rename(tmp, statePath)
 end
 
+-- The title shown by Noctalia's native media player comes from MPRIS, which
+-- mpv-mpris builds from media-title. Show the song when the stream announces
+-- one, and fall back to the station name (from #EXTINF) otherwise, so MPRIS
+-- stays readable when the stream only advertises a generic "stream" title.
+local function updateTitle()
+  local title = stationName
+  if appliedSong ~= nil and appliedSong ~= "" then
+    title = appliedSong
+  end
+  if title == "" or title == appliedTitle then
+    return
+  end
+  appliedTitle = title
+  pcall(function()
+    mp.set_property("force-media-title", title)
+  end)
+end
+
 local function applyTrack()
   -- Reload instead of caching at startup: a local station's cover can be
   -- edited or found automatically while the playlist is already loaded.
@@ -77,21 +97,18 @@ local function applyTrack()
   if pos == nil or pos < 0 then
     return
   end
-  -- #EXTINF gives the playlist entry the station name. Setting it as the
-  -- forced title keeps MPRIS readable even when the stream later advertises a
-  -- generic "stream" title or an ICY song name.
-  local title = mp.get_property("playlist/" .. tostring(pos) .. "/title", "")
-  if title ~= nil and title ~= "" then
-    mp.set_property("force-media-title", title)
-  end
+  stationName = mp.get_property("playlist/" .. tostring(pos) .. "/title", "") or ""
+  updateTitle()
   setCover(coverAt(covers, pos))
 end
 
--- Streams announce the current song through ICY metadata. force-media-title
--- hides it from media-title, but the icy-title metadata field keeps it, so
--- mirror it to song.txt for the panel's mini player.
-local function currentSong()
-  local value = mp.get_property("metadata/by-key/icy-title", "")
+-- Streams announce the current song in different ways depending on the
+-- server: Shoutcast/Icecast send ICY metadata (icy-title / StreamTitle), while
+-- Ogg/Opus, AAC and HLS streams put it in regular tags (title, artist). Local
+-- radios are very often one of the latter, so look at every common key.
+-- force-media-title hides the song from media-title, but the raw metadata
+-- table keeps it, so mirror it to song.txt for the panel's mini player.
+local function cleanValue(value)
   if value == nil then
     return ""
   end
@@ -102,11 +119,83 @@ local function currentSong()
   return value
 end
 
+local function metaGet(meta, wanted)
+  for key, value in pairs(meta) do
+    if type(key) == "string" and key:lower() == wanted then
+      return cleanValue(value)
+    end
+  end
+  return ""
+end
+
+local lastDump = nil
+
+local function dumpMeta(meta)
+  -- Debug aid: lists exactly what the stream advertises, so a station that
+  -- shows no song can be diagnosed (cat ~/.local/share/.../meta-debug.txt).
+  if dataDir == "" then
+    return
+  end
+  local keys = {}
+  for key, value in pairs(meta) do
+    keys[#keys + 1] = tostring(key) .. " = " .. cleanValue(value)
+  end
+  table.sort(keys)
+  local text = table.concat(keys, "\n")
+  if text == lastDump then
+    return
+  end
+  lastDump = text
+  local f = io.open(dataDir .. "/meta-debug.txt", "w")
+  if f ~= nil then
+    f:write(text .. "\n")
+    f:close()
+  end
+end
+
+local function currentSong()
+  local meta = mp.get_property_native("metadata")
+  if type(meta) ~= "table" then
+    return ""
+  end
+  dumpMeta(meta)
+
+  local pos = mp.get_property_number("playlist-pos", -1)
+  local station = ""
+  if pos ~= nil and pos >= 0 then
+    station = cleanValue(mp.get_property("playlist/" .. tostring(pos) .. "/title", ""))
+  end
+
+  local candidates = {
+    metaGet(meta, "icy-title"),
+    metaGet(meta, "streamtitle"),
+  }
+  local title = metaGet(meta, "title")
+  local artist = metaGet(meta, "artist")
+  if title ~= "" and artist ~= "" then
+    candidates[#candidates + 1] = artist .. " - " .. title
+  else
+    candidates[#candidates + 1] = title
+  end
+
+  for _, value in ipairs(candidates) do
+    -- A "title" equal to the station name is not a song.
+    if value ~= "" and value ~= station then
+      return value
+    end
+  end
+  return ""
+end
+
 local function writeSong(value)
-  if songPath == "" or value == appliedSong then
+  if value == appliedSong then
     return
   end
   appliedSong = value
+  updateTitle()
+  if songPath == "" then
+    return
+  end
   local tmp = songPath .. ".tmp"
   local f = io.open(tmp, "w")
   if f == nil then
@@ -118,6 +207,8 @@ local function writeSong(value)
 end
 
 mp.register_event("start-file", function()
+  appliedSong = nil
+  appliedTitle = nil
   applyTrack()
 end)
 
