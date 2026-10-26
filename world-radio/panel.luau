@@ -9,7 +9,7 @@ local TOP_COUNTRIES = 12
 local SEARCH_DEBOUNCE_MS = 350
 local FAV_ANIM_MS = 500
 local API_BASE = "https://de1.api.radio-browser.info"
-local USER_AGENT = "nilsonlinux/world-radio/1.0.0"
+local USER_AGENT = "nilsonlinux/world-radio/1.1.0"
 
 local GENRES = {
   { name = "Rock",      icon = "guitar-pick", tag = "rock" },
@@ -179,6 +179,8 @@ local playQueue = nil
 local playQueueView = nil
 local playQueueDone = true
 local playQueueOffset = 0
+local playerSession = nil
+local sessionCounter = 0
 local revealNonce = 0
 local favorites = {}
 local thumbs = {}
@@ -274,6 +276,31 @@ end
 
 local function shellQuote(s)
   return "'" .. tostring(s):gsub("'", "'\\''") .. "'"
+end
+
+local function playlistPath()
+  return getDataDir() .. "/queue.m3u"
+end
+
+local function coversPath()
+  return getDataDir() .. "/covers.txt"
+end
+
+local function nowPath()
+  return getDataDir() .. "/now.json"
+end
+
+local function getPluginDir()
+  local ok, dir = pcall(noctalia.pluginDir)
+  if ok and type(dir) == "string" and dir ~= "" then
+    return dir
+  end
+  return nil
+end
+
+local function newSession()
+  sessionCounter = sessionCounter + 1
+  return string.format("s%d-%d", math.floor(noctalia.nowMs()), sessionCounter)
 end
 
 local playerName = noctalia.commandExists("mpv") and "mpv" or "ffplay"
@@ -703,6 +730,7 @@ local function publishPlaying()
     uuid = playingUuid or "",
     url = playingUrl,
     flag = flagEmoji(playingStation ~= nil and playingStation.countrycode or nil),
+    session = playerSession or "",
   })
 end
 
@@ -737,6 +765,7 @@ local function stopPlayback()
   currentSongTitle = ""
   playQueue = nil
   playQueueView = nil
+  playerSession = nil
   stopLivePulse()
   clearPlayingState()
   publishPlaying()
@@ -836,6 +865,7 @@ savePlayingState = function()
     countryCode = selectedCode,
     countryName = selectedName,
     genre = selectedGenre,
+    session = playerSession,
   })
   if ok and encoded ~= nil then
     noctalia.writeFile(playingPath(), encoded)
@@ -844,6 +874,9 @@ end
 
 clearPlayingState = function()
   noctalia.removeFile(playingPath())
+  -- now.json belongs to the mpv process that is going away; leaving it behind
+  -- would make the sync service read a position for the wrong session.
+  noctalia.removeFile(nowPath())
 end
 
 playerAlive = function()
@@ -879,6 +912,7 @@ restorePlayingState = function()
   playingName = tostring(st.name or "")
   playingUrl = st.url
   playingStation = st
+  playerSession = type(val.session) == "string" and val.session ~= "" and val.session or nil
   ensureStationCountry(st)
   if type(val.queue) == "table" then
     playQueue = val.queue
@@ -922,34 +956,94 @@ local function viewList(v)
   return nil
 end
 
-local function startPlayerProcess(station, cover)
+local function sanitizePlaylistLine(value)
+  return tostring(value or ""):gsub("[\r\n]+", " ")
+end
+
+local function coverFor(station)
+  local path = thumbs[station.uuid]
+  if path == nil and not failedFavicons[station.uuid] then
+    path = artDest(station)
+  end
+  if path ~= nil and noctalia.fileInfo(path) ~= nil then
+    return path
+  end
+  -- Placeholder keeps covers.txt aligned with playlist positions.
+  return "-"
+end
+
+local function writePlaylist(index)
+  local queue = playQueue or {}
+  local lines = { "#EXTM3U" }
+  local covers = {}
+  for i, station in ipairs(queue) do
+    local name = station.name
+    if name == nil or name == "" then
+      name = station.url
+    end
+    lines[#lines + 1] = "#EXTINF:-1," .. sanitizePlaylistLine(name)
+    lines[#lines + 1] = sanitizePlaylistLine(station.url)
+    covers[i] = coverFor(station)
+  end
+  noctalia.writeFile(playlistPath(), table.concat(lines, "\n") .. "\n")
+  noctalia.writeFile(coversPath(), table.concat(covers, "\n") .. "\n")
+end
+
+local function ensurePlayQueue(station)
+  if type(playQueue) == "table" then
+    for i, entry in ipairs(playQueue) do
+      if entry.uuid == station.uuid then
+        return i
+      end
+    end
+  end
+  -- The source list did not contain the station (for example after restoring a
+  -- runtime whose list was never fetched). Keep playback usable with a queue
+  -- of one; skipping stays a no-op until another station is chosen.
+  playQueue = { station }
+  playQueueView = nil
+  playQueueDone = true
+  playQueueOffset = 1
+  return 1
+end
+
+local function startPlayerProcess(station, startIndex, session)
   local pidFile = getDataDir() .. "/player.pid"
-  local mprisArg = ""
-  local titleArg = ""
-  local clientArg = ""
-  local coverArg = ""
+  local args = playerArgs
+  local env = ""
   if playerName == "mpv" then
     local mprisScript, mprisFound = mprisScriptPath()
     if not mprisFound and not mprisMissingWarned then
       mprisMissingWarned = true
       noctalia.notifyError(tr("panel.mpris_missing_title"), tr("panel.mpris_missing_body"))
     end
+    local mprisArg = ""
     if mprisScript ~= nil then
       mprisArg = " --script=" .. shellQuote(mprisScript)
     end
-    -- Radio streams usually report "stream" as their media title. Force the
-    -- station name so Noctalia's media panel shows meaningful track data.
-    if station.name ~= nil and station.name ~= "" then
-      titleArg = " --force-media-title=" .. shellQuote(station.name)
+    local helperArg = ""
+    local pluginDir = getPluginDir()
+    if pluginDir ~= nil then
+      local helper = pluginDir .. "/radio.lua"
+      if noctalia.fileExists(helper) then
+        helperArg = " --script=" .. shellQuote(helper)
+      end
     end
-    clientArg = " --audio-client-name=" .. shellQuote(MEDIA_PLAYER_NAME)
-    if cover ~= nil then
-      coverArg = " --cover-art-files=" .. shellQuote(cover)
-    end
+    args = args
+      .. mprisArg
+      .. helperArg
+      .. " --audio-client-name=" .. shellQuote(MEDIA_PLAYER_NAME)
+      .. " --playlist=" .. shellQuote(playlistPath())
+      .. " --playlist-start=" .. tostring(startIndex or 0)
+      .. " --loop-playlist=force"
+    env = "WORLD_RADIO_SESSION=" .. shellQuote(session or "")
+      .. " WORLD_RADIO_DATA=" .. shellQuote(getDataDir()) .. " "
+  else
+    args = args .. " " .. shellQuote(station.url)
   end
   local cmd = string.format(
-    "kill $(cat %s 2>/dev/null) 2>/dev/null; %s %s%s%s%s%s %s >/dev/null 2>&1 & echo $! > %s",
-    shellQuote(pidFile), playerName, playerArgs, mprisArg, titleArg, clientArg, coverArg, shellQuote(station.url), shellQuote(pidFile)
+    "kill $(cat %s 2>/dev/null) 2>/dev/null; %s%s %s >/dev/null 2>&1 & echo $! > %s",
+    shellQuote(pidFile), env, playerName, args, shellQuote(pidFile)
   )
   noctalia.runAsync(cmd)
 end
@@ -959,6 +1053,7 @@ local function playStation(station, sourceView)
   playingName = station.name
   playingUrl = station.url
   playingStation = station
+  playerSession = playerName == "mpv" and newSession() or nil
   ensureStationCountry(station)
   currentSongTitle = ""
   lastSongPoll = 0
@@ -987,30 +1082,37 @@ local function playStation(station, sourceView)
       end
     end
   end
+
+  local queueIndex = ensurePlayQueue(station)
+  if playerName == "mpv" then
+    writePlaylist(queueIndex)
+  end
   render()
   savePlayingState()
 
   if playerName ~= "mpv" then
-    startPlayerProcess(station, nil)
+    startPlayerProcess(station, 1)
     return
   end
 
+  local launchSession = playerSession
   local dest = thumbs[station.uuid] or artDest(station)
   if dest == nil or failedFavicons[station.uuid] then
-    startPlayerProcess(station, nil)
+    startPlayerProcess(station, queueIndex, launchSession)
     return
   end
   if noctalia.fileInfo(dest) ~= nil then
-    startPlayerProcess(station, dest)
+    startPlayerProcess(station, queueIndex, launchSession)
     return
   end
 
-  -- mpv-mpris reads cover-art-files once, when the stream's metadata is first
-  -- built. Download the logo first so the media panel receives mpris:artUrl on
-  -- its first update instead of only after a later replay.
-  ensureFavicon(station, function(path)
-    if playingUuid == station.uuid then
-      startPlayerProcess(station, path)
+  -- The helper applies cover-art-files when each playlist entry loads. Download
+  -- the starting station's logo first and refresh covers.txt so the media panel
+  -- gets mpris:artUrl as soon as playback begins.
+  ensureFavicon(station, function()
+    if playingUuid == station.uuid and playerSession == launchSession then
+      writePlaylist(queueIndex)
+      startPlayerProcess(station, queueIndex, launchSession)
     end
   end)
 end
@@ -2696,3 +2798,42 @@ end
 function onConfigChanged()
   render()
 end
+
+-- Adopt station changes made outside the panel (native media Next/Previous, or
+-- a wheel gesture on the bar widget). The sync service publishes the station it
+-- reads from now.json, keyed by the mpv session started above.
+noctalia.state.watch("playing", function(value)
+  if type(value) ~= "table" then
+    return
+  end
+  if playerSession == nil or playerSession == "" then
+    return
+  end
+  if value.session ~= playerSession then
+    return
+  end
+  local uuid = value.uuid
+  if type(uuid) ~= "string" or uuid == "" or uuid == playingUuid then
+    return
+  end
+  if type(playQueue) ~= "table" then
+    return
+  end
+  local station = nil
+  for _, entry in ipairs(playQueue) do
+    if entry.uuid == uuid then
+      station = entry
+      break
+    end
+  end
+  if station == nil then
+    return
+  end
+  playingUuid = uuid
+  playingName = tostring(station.name or "")
+  playingUrl = tostring(station.url or "")
+  playingStation = station
+  currentSongTitle = ""
+  ensureStationCountry(station)
+  render()
+end)
