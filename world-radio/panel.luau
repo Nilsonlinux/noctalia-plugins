@@ -9,7 +9,7 @@ local TOP_COUNTRIES = 12
 local SEARCH_DEBOUNCE_MS = 350
 local FAV_ANIM_MS = 500
 local API_BASE = "https://de1.api.radio-browser.info"
-local USER_AGENT = "nilsonlinux/world-radio/1.1.0"
+local USER_AGENT = "nilsonlinux/world-radio/1.1.1"
 
 local GENRES = {
   { name = "Rock",      icon = "guitar-pick", tag = "rock" },
@@ -972,7 +972,7 @@ local function coverFor(station)
   return "-"
 end
 
-local function writePlaylist(index)
+local function writePlaylist()
   local queue = playQueue or {}
   local lines = { "#EXTM3U" }
   local covers = {}
@@ -1007,7 +1007,7 @@ local function ensurePlayQueue(station)
   return 1
 end
 
-local function startPlayerProcess(station, startIndex, session)
+local function startPlayerProcess(station, queueIndex, session)
   local pidFile = getDataDir() .. "/player.pid"
   local args = playerArgs
   local env = ""
@@ -1034,7 +1034,8 @@ local function startPlayerProcess(station, startIndex, session)
       .. helperArg
       .. " --audio-client-name=" .. shellQuote(MEDIA_PLAYER_NAME)
       .. " --playlist=" .. shellQuote(playlistPath())
-      .. " --playlist-start=" .. tostring(startIndex or 0)
+      -- Lua arrays are 1-based but mpv's playlist-start is 0-based.
+      .. " --playlist-start=" .. tostring(math.max(0, (tonumber(queueIndex) or 1) - 1))
       .. " --loop-playlist=force"
     env = "WORLD_RADIO_SESSION=" .. shellQuote(session or "")
       .. " WORLD_RADIO_DATA=" .. shellQuote(getDataDir()) .. " "
@@ -1085,7 +1086,7 @@ local function playStation(station, sourceView)
 
   local queueIndex = ensurePlayQueue(station)
   if playerName == "mpv" then
-    writePlaylist(queueIndex)
+    writePlaylist()
   end
   render()
   savePlayingState()
@@ -1111,7 +1112,7 @@ local function playStation(station, sourceView)
   -- gets mpris:artUrl as soon as playback begins.
   ensureFavicon(station, function()
     if playingUuid == station.uuid and playerSession == launchSession then
-      writePlaylist(queueIndex)
+      writePlaylist()
       startPlayerProcess(station, queueIndex, launchSession)
     end
   end)

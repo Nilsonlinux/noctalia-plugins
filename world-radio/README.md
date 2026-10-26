@@ -152,7 +152,7 @@ turns each new id into an MPRIS Next (`dir = 1`) or Previous (`dir = -1`).
 - **Network calls** - the plugin talks to `radio-browser.info`
   (`de1.api.radio-browser.info`) using `/json/countries`, `/json/stats`, and
   `/json/stations/search` (`hidebroken=true`, ordered by votes) with a
-  `User-Agent` of `nilsonlinux/world-radio/1.1.0`. No credentials are sent.
+  `User-Agent` of `nilsonlinux/world-radio/1.1.1`. No credentials are sent.
 - **Processes** - playback spawns `mpv` (or `ffplay`) per station; the PID is
   stored in `player.pid` so the next play/Stop kills it cleanly. mpv is given
   the whole queue as `--playlist` with `--loop-playlist=force`, so its MPRIS
