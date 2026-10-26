@@ -51,10 +51,17 @@ mpv-mpris.
   publishes them as `xesam:title` and `mpris:artUrl`, so Noctalia's media
   panel shows the station name and its own logo. The station you start is
   downloaded first; other stations use their cached logo (or none). For local
-  radios the optional cover URL you set is used as the logo.
+  radios the plugin looks the artwork up automatically (see below); the
+  optional cover URL is only an override. Editing the cover of the station
+  that is currently playing restarts mpv at the same queue position, because
+  mpv-mpris caches `mpris:artUrl` per stream.
 - **Now playing on the bar** - while a station plays, the bar widget shows its
   name next to the icon (configurable, see `show_now_playing`) and a tooltip
  with "Now playing: `<station>`".
+- **Current song in the mini player** - the bundled mpv helper mirrors the
+  stream's ICY metadata (`icy-title`) to `song.txt`, so the panel's mini player
+  shows the current song under the station name and scrolls long titles. The
+  native media widget keeps showing the station name.
 - **Two languages** - English and `pt-BR` translations.
 
 ## Requirements
@@ -75,9 +82,6 @@ automatically falls back to `ffplay` (provided by `ffmpeg`), also expected on
   media panel keeps saying nothing is playing.
 - `glib2` - provides `gdbus` (declared dependency). The background service uses
   it to call MPRIS Next/Previous on mpv.
-- `playerctl` - *optional*. Used by the mini player to read a separate track
-  title from MPRIS when the player exposes one; it is not needed for the media
-  panel, playback or station switching.
 - **Network** - reaching `radio-browser.info` is required for the country
   list, the stats cards, all station lists and searches. No API key or
   account is needed; the service is a public, free API.
@@ -109,8 +113,11 @@ floating window centered on the screen by default.
    starred.
 5. **Local radios** - the broadcast button in the header opens your saved
    stations; `+` lets you add one with a stream URL (an optional name and an
-   optional cover image URL). Use the pencil button to edit it and the trash
-   button to remove it.
+   optional cover image URL). Artwork is fetched automatically when possible:
+   the plugin asks `radio-browser.info` for the stream, reads the station page
+   for Zeno streams, and falls back to the stream host's `og:image`. The cover
+   URL field is only an override for stations whose artwork cannot be found.
+   Use the pencil button to edit a station and the trash button to remove it.
 6. While a station plays, check the media widget for the station's name and
    logo, and the bar for the now-playing name. Scroll up/down over the bar
    widget to move to the next/previous station, or press Next/Previous in the
@@ -151,9 +158,13 @@ turns each new id into an MPRIS Next (`dir = 1`) or Previous (`dir = -1`).
   Next/Previous through MPRIS for wheel gestures. Fetching and browsing still
   happen only in the panel.
 - **Network calls** - the plugin talks to `radio-browser.info`
-  (`de1.api.radio-browser.info`) using `/json/countries`, `/json/stats`, and
-  `/json/stations/search` (`hidebroken=true`, ordered by votes) with a
-  `User-Agent` of `nilsonlinux/world-radio/1.1.2`. No credentials are sent.
+  (`de1.api.radio-browser.info`) using `/json/countries`, `/json/stats`,
+  `/json/stations/search` (`hidebroken=true`, ordered by votes) and
+  `/json/stations/byurl` for automatic local-radio artwork, with a
+  `User-Agent` of `nilsonlinux/world-radio/1.2.0`. When that lookup misses,
+  it may fetch `https://zeno.fm/radio/<name>/` for Zeno streams or the stream
+  host's home page to read its `og:image`. Cover images are downloaded only
+  from `http(s)://` URLs. No credentials are sent.
 - **Processes** - playback spawns `mpv` (or `ffplay`) per station; the PID is
   stored in `player.pid` so the next play/Stop kills it cleanly. mpv is given
   the whole queue as `--playlist` with `--loop-playlist=force`, so its MPRIS
@@ -184,8 +195,8 @@ turns each new id into an MPRIS Next (`dir = 1`) or Previous (`dir = -1`).
   only the station you start is downloaded before playback.
 - The media panel title is forced to the station name for each playlist entry,
   so it stays readable even for streams that would otherwise report a generic
-  `stream` title. The mini player's separate track line is shown only when
-  `playerctl` + `mpv-mpris` expose a title different from the station name.
+  `stream` title. The mini player reads the current song from the stream's own
+  ICY metadata instead, so it does not depend on MPRIS titles.
 
 ## License
 

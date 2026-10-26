@@ -12,22 +12,43 @@ local dataDir = os.getenv("WORLD_RADIO_DATA") or ""
 local session = os.getenv("WORLD_RADIO_SESSION") or ""
 local statePath = dataDir ~= "" and (dataDir .. "/now.json") or ""
 local coversPath = dataDir ~= "" and (dataDir .. "/covers.txt") or ""
+local songPath = dataDir ~= "" and (dataDir .. "/song.txt") or ""
 
-local covers = nil
+local appliedCover = nil
+local appliedSong = nil
 
 local function loadCovers()
-  covers = {}
+  local list = {}
   if coversPath == "" then
-    return
+    return list
   end
   local f = io.open(coversPath, "r")
   if f == nil then
-    return
+    return list
   end
   for line in f:lines() do
-    covers[#covers + 1] = line
+    list[#list + 1] = line
   end
   f:close()
+  return list
+end
+
+local function coverAt(list, pos)
+  local cover = list[pos + 1]
+  if cover == nil or cover == "-" then
+    return ""
+  end
+  return cover
+end
+
+local function setCover(cover)
+  if cover == appliedCover then
+    return
+  end
+  appliedCover = cover
+  pcall(function()
+    mp.set_property("cover-art-files", cover)
+  end)
 end
 
 local function writeNow(pos)
@@ -49,9 +70,9 @@ local function writeNow(pos)
 end
 
 local function applyTrack()
-  if covers == nil then
-    loadCovers()
-  end
+  -- Reload instead of caching at startup: a local station's cover can be
+  -- edited or found automatically while the playlist is already loaded.
+  local covers = loadCovers()
   local pos = mp.get_property_number("playlist-pos", -1)
   if pos == nil or pos < 0 then
     return
@@ -63,13 +84,37 @@ local function applyTrack()
   if title ~= nil and title ~= "" then
     mp.set_property("force-media-title", title)
   end
-  local cover = covers[pos + 1]
-  if cover == nil or cover == "-" then
-    cover = ""
+  setCover(coverAt(covers, pos))
+end
+
+-- Streams announce the current song through ICY metadata. force-media-title
+-- hides it from media-title, but the icy-title metadata field keeps it, so
+-- mirror it to song.txt for the panel's mini player.
+local function currentSong()
+  local value = mp.get_property("metadata/by-key/icy-title", "")
+  if value == nil then
+    return ""
   end
-  pcall(function()
-    mp.set_property("cover-art-files", cover)
-  end)
+  value = tostring(value):gsub("[%c]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+  if #value > 200 then
+    value = string.sub(value, 1, 200)
+  end
+  return value
+end
+
+local function writeSong(value)
+  if songPath == "" or value == appliedSong then
+    return
+  end
+  appliedSong = value
+  local tmp = songPath .. ".tmp"
+  local f = io.open(tmp, "w")
+  if f == nil then
+    return
+  end
+  f:write(value)
+  f:close()
+  os.rename(tmp, songPath)
 end
 
 mp.register_event("start-file", function()
@@ -82,4 +127,19 @@ mp.register_event("file-loaded", function()
   if pos ~= nil and pos >= 0 then
     writeNow(pos)
   end
+  writeSong(currentSong())
+end)
+
+-- Covers.txt is rewritten when a cover changes. Picking it up here also keeps
+-- the next station correct even if mpv-mpris cached the old artwork.
+mp.add_periodic_timer(1, function()
+  local pos = mp.get_property_number("playlist-pos", -1)
+  if pos == nil or pos < 0 then
+    return
+  end
+  local cover = coverAt(loadCovers(), pos)
+  if cover ~= appliedCover then
+    setCover(cover)
+  end
+  writeSong(currentSong())
 end)
