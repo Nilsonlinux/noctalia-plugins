@@ -288,9 +288,8 @@ local function normalizeFeedUrl(raw)
   return url
 end
 
--- Builds the plugin-owned feed list: keeps the saved feeds, then folds in the
--- ones the old `feed_urls` config setting still knows about (and any URL
--- already being tracked in `seen`), so an update never silently loses feeds.
+-- Builds the plugin-owned feed list: keeps the saved feeds and folds in any URL
+-- already being tracked in `seen`, so an update never silently loses feeds.
 local function migrateFeeds()
   local list = {}
   local known = {}
@@ -305,15 +304,9 @@ local function migrateFeeds()
     end
   end
   local function getFeedsConfig()
-    local cfg
-    local ok = pcall(function()
-      cfg = noctalia.getConfig("feeds")
+    local ok, cfg = pcall(function()
+      return noctalia.getConfig("feeds")
     end)
-    if not ok or type(cfg) ~= "table" then
-      ok = pcall(function()
-        cfg = noctalia.getConfig("feed_urls")
-      end)
-    end
     return (ok and type(cfg) == "table") and cfg or nil
   end
   local configured = getFeedsConfig()
