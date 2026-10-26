@@ -31,6 +31,8 @@
     "goto_list_tooltip": "Mostrar na lista",
     "load_more": "Carregar mais",
     "loading": "Carregando...",
+    "mpris_missing_body": "Instale o pacote mpv-mpris para que o nome e a capa da estação apareçam no painel de mídia do Noctalia.",
+    "mpris_missing_title": "A integração com o painel de mídia precisa do mpv-mpris",
     "next_tooltip": "Próxima estação",
     "play_tooltip": "Tocar",
     "prev_tooltip": "Estação anterior",

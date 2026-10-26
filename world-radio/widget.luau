@@ -4,7 +4,7 @@
 
 local currentName = ""
 local currentFlag = ""
-local showName = noctalia.getConfig("show_now_playing") ~= false
+local showName = noctalia.getConfig("show_now_playing") == true
 
 local function displayText()
   if currentName == "" then
@@ -55,7 +55,7 @@ function onClick()
 end
 
 function onConfigChanged()
-  showName = noctalia.getConfig("show_now_playing") ~= false
+  showName = noctalia.getConfig("show_now_playing") == true
   render()
 end
 

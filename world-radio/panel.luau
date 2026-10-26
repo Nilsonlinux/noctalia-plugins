@@ -279,6 +279,48 @@ end
 local playerName = noctalia.commandExists("mpv") and "mpv" or "ffplay"
 local playerArgs = playerName == "mpv" and "--no-video --no-terminal --volume=85" or "-nodisp -loglevel quiet -autoexit -volume 85"
 
+-- Noctalia's media panel only reads MPRIS. mpv needs the mpv-mpris plugin to
+-- register itself there; without it the panel reports "nothing playing".
+-- mpv auto-loads mpris.so from these directories, so an explicit --script is
+-- only needed when the plugin lives elsewhere (e.g. /usr/lib/mpv-mpris).
+local MEDIA_PLAYER_NAME = "World Radio"
+local mprisMissingWarned = false
+
+local function mprisScriptPath()
+  local function exists(path)
+    return type(path) == "string" and path ~= "" and noctalia.fileExists(path)
+  end
+
+  local autoPaths = {
+    "/etc/mpv/scripts/mpris.so",
+    noctalia.expandPath("~/.config/mpv/scripts/mpris.so"),
+  }
+  local configHome = noctalia.getenv("XDG_CONFIG_HOME")
+  if configHome ~= nil and configHome ~= "" then
+    table.insert(autoPaths, configHome .. "/mpv/scripts/mpris.so")
+  end
+  for _, path in ipairs(autoPaths) do
+    if exists(path) then
+      return nil, true
+    end
+  end
+
+  local candidates = {
+    "/usr/lib/mpv-mpris/mpris.so",
+    getDataDir() .. "/mpris.so",
+  }
+  local ok, dir = pcall(noctalia.pluginDir)
+  if ok and type(dir) == "string" and dir ~= "" then
+    table.insert(candidates, dir .. "/mpris.so")
+  end
+  for _, path in ipairs(candidates) do
+    if exists(path) then
+      return path, true
+    end
+  end
+  return nil, false
+end
+
 local FLAG_EMOJIS = {}
 do
   local letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -675,6 +717,11 @@ local function pollSongTitle()
       return
     end
     local title = noctalia.string.trim(result.stdout)
+    -- --force-media-title makes MPRIS report the station name as the track
+    -- title; don't repeat it in the mini player's song line.
+    if title == playingName then
+      title = ""
+    end
     if title ~= currentSongTitle then
       currentSongTitle = title
       render()
@@ -875,8 +922,39 @@ local function viewList(v)
   return nil
 end
 
-local function playStation(station, sourceView)
+local function startPlayerProcess(station, cover)
   local pidFile = getDataDir() .. "/player.pid"
+  local mprisArg = ""
+  local titleArg = ""
+  local clientArg = ""
+  local coverArg = ""
+  if playerName == "mpv" then
+    local mprisScript, mprisFound = mprisScriptPath()
+    if not mprisFound and not mprisMissingWarned then
+      mprisMissingWarned = true
+      noctalia.notifyError(tr("panel.mpris_missing_title"), tr("panel.mpris_missing_body"))
+    end
+    if mprisScript ~= nil then
+      mprisArg = " --script=" .. shellQuote(mprisScript)
+    end
+    -- Radio streams usually report "stream" as their media title. Force the
+    -- station name so Noctalia's media panel shows meaningful track data.
+    if station.name ~= nil and station.name ~= "" then
+      titleArg = " --force-media-title=" .. shellQuote(station.name)
+    end
+    clientArg = " --audio-client-name=" .. shellQuote(MEDIA_PLAYER_NAME)
+    if cover ~= nil then
+      coverArg = " --cover-art-files=" .. shellQuote(cover)
+    end
+  end
+  local cmd = string.format(
+    "kill $(cat %s 2>/dev/null) 2>/dev/null; %s %s%s%s%s%s %s >/dev/null 2>&1 & echo $! > %s",
+    shellQuote(pidFile), playerName, playerArgs, mprisArg, titleArg, clientArg, coverArg, shellQuote(station.url), shellQuote(pidFile)
+  )
+  noctalia.runAsync(cmd)
+end
+
+local function playStation(station, sourceView)
   playingUuid = station.uuid
   playingName = station.name
   playingUrl = station.url
@@ -911,25 +989,30 @@ local function playStation(station, sourceView)
   end
   render()
   savePlayingState()
-  local cover = nil
-  if playerName == "mpv" then
-    local dest = artDest(station)
-    if dest ~= nil and noctalia.fileInfo(dest) ~= nil then
-      cover = dest
+
+  if playerName ~= "mpv" then
+    startPlayerProcess(station, nil)
+    return
+  end
+
+  local dest = thumbs[station.uuid] or artDest(station)
+  if dest == nil or failedFavicons[station.uuid] then
+    startPlayerProcess(station, nil)
+    return
+  end
+  if noctalia.fileInfo(dest) ~= nil then
+    startPlayerProcess(station, dest)
+    return
+  end
+
+  -- mpv-mpris reads cover-art-files once, when the stream's metadata is first
+  -- built. Download the logo first so the media panel receives mpris:artUrl on
+  -- its first update instead of only after a later replay.
+  ensureFavicon(station, function(path)
+    if playingUuid == station.uuid then
+      startPlayerProcess(station, path)
     end
-  end
-  local coverArg = ""
-  if cover ~= nil then
-    coverArg = " --cover-art-files=" .. shellQuote(cover)
-  end
-  local cmd = string.format(
-    "kill $(cat %s 2>/dev/null) 2>/dev/null; %s %s%s %s >/dev/null 2>&1 & echo $! > %s",
-    shellQuote(pidFile), playerName, playerArgs, coverArg, shellQuote(station.url), shellQuote(pidFile)
-  )
-  noctalia.runAsync(cmd)
-  if cover == nil then
-    loadFavicon(station)
-  end
+  end)
 end
 
 local function loadFavorites()
@@ -1162,7 +1245,7 @@ local function statCard(label, value, onClick)
     gap      = 2,
     padding  = 10,
     radius   = 8,
-    fill     = isHovered and "surface_variant/0.9" or "surface_variant/0.65",
+    fill     = isHovered and "surface_container/0.9" or "surface_container/0.65",
     align    = "center",
     justify  = "center",
     flexGrow = 1,
@@ -1176,7 +1259,7 @@ local function statCard(label, value, onClick)
   end
   return ui.column(props, {
     ui.label({ text = value, fontSize = 20, fontWeight = "bold", color = "primary" }),
-    ui.label({ text = label, fontSize = 11, color = "outline" }),
+    ui.label({ text = label, fontSize = 11, color = "outline_variant" }),
   })
 end
 
@@ -1189,7 +1272,7 @@ end
 
 local function centeredLabel(text, color)
   return ui.column({ flexGrow = 1, align = "center", justify = "center", padding = 32 }, {
-    ui.label({ text = text, color = color or "outline", textAlign = "center" }),
+    ui.label({ text = text, color = color or "outline_variant", textAlign = "center" }),
   })
 end
 
@@ -1198,14 +1281,14 @@ local function countryCard(c)
   local flag = flagEmoji(c.iso)
   local flagInner = (flag ~= "")
     and ui.label({ text = flag, fontSize = 14 })
-    or ui.glyph({ name = "world", size = 14, color = "outline" })
+    or ui.glyph({ name = "world", size = 14, color = "outline_variant" })
   local isHovered = (hoveredKey == key)
   return ui.column({
     key         = key,
     gap         = 4,
     padding     = 8,
     radius      = 8,
-    fill        = isHovered and "surface_variant/0.9" or "surface_variant/0.5",
+    fill        = isHovered and "surface_container/0.9" or "surface_container/0.5",
     align       = "center",
     justify     = "center",
     flexGrow    = 1,
@@ -1215,7 +1298,7 @@ local function countryCard(c)
       render()
     end,
   }, {
-    ui.column({ width = 28, height = 28, radius = 7, fill = "surface_variant/0.65", align = "center", justify = "center" }, { flagInner }),
+    ui.column({ width = 28, height = 28, radius = 7, fill = "surface_container/0.65", align = "center", justify = "center" }, { flagInner }),
     ui.label({ text = c.name, fontSize = 10, maxLines = 1, textAlign = "center" }),
     ui.column({ paddingH = 6, paddingV = 1, radius = 8, fill = "primary/0.15" }, {
       ui.label({ text = tostring(c.count), fontSize = 9, fontWeight = "bold", color = "primary" }),
@@ -1228,8 +1311,8 @@ local function countryRow(c)
   local flag = flagEmoji(c.iso)
   local flagInner = (flag ~= "")
     and ui.label({ text = flag, fontSize = 12 })
-    or ui.glyph({ name = "world", size = 13, color = "outline" })
-  local flagWidget = ui.column({ width = 24, height = 24, radius = 6, fill = "surface_variant/0.65", align = "center", justify = "center" }, { flagInner })
+    or ui.glyph({ name = "world", size = 13, color = "outline_variant" })
+  local flagWidget = ui.column({ width = 24, height = 24, radius = 6, fill = "surface_container/0.65", align = "center", justify = "center" }, { flagInner })
   local isHovered = (hoveredKey == key)
   return ui.row({
     key     = key,
@@ -1238,8 +1321,8 @@ local function countryRow(c)
     paddingH = 6,
     paddingV = 1,
     radius  = 6,
-    fill        = "surface_variant/0.4",
-    border      = "outline",
+    fill        = "surface_container/0.4",
+    border      = "outline_variant",
     borderWidth = isHovered and 1 or 0,
     onClick = function() selectCountry(c.iso, c.name) end,
     onHover = function(isHovering)
@@ -1249,8 +1332,8 @@ local function countryRow(c)
   }, {
     flagWidget,
     ui.label({ text = c.name, fontSize = 12, flexGrow = 1, maxLines = 1 }),
-    ui.label({ text = tostring(c.count), fontSize = 12, fontWeight = "bold", color = "outline" }),
-    ui.glyph({ name = "chevron-right", size = 13, color = "outline" }),
+    ui.label({ text = tostring(c.count), fontSize = 12, fontWeight = "bold", color = "outline_variant" }),
+    ui.glyph({ name = "chevron-right", size = 13, color = "outline_variant" }),
   })
 end
 
@@ -1265,14 +1348,14 @@ local function genreChip(g)
     paddingV = 4,
     radius  = 14,
     align   = "center",
-    fill    = isActive and "primary/0.2" or (isHovered and "surface_variant/0.8" or "surface_variant/0.55"),
+    fill    = isActive and "primary/0.2" or (isHovered and "surface_container/0.8" or "surface_container/0.55"),
     onClick = function() selectGenre(g) end,
     onHover = function(isHovering)
       hoveredKey = isHovering and key or nil
       render()
     end,
   }, {
-    ui.glyph({ name = g.icon, size = 11, color = isActive and "primary" or "outline" }),
+    ui.glyph({ name = g.icon, size = 11, color = isActive and "primary" or "outline_variant" }),
     ui.label({ text = g.name, fontSize = 10, color = isActive and "primary" or "on_surface" }),
   })
 end
@@ -1340,14 +1423,14 @@ renderDashboard = function()
         paddingH    = 8,
         paddingV    = 6,
         radius      = 7,
-        fill        = "surface_variant/0.5",
+        fill        = "surface_container/0.5",
         onClick     = function()
           genresExpanded = not genresExpanded
           render()
         end,
       }, {
         ui.label({ text = tr("panel.genres_title"), fontSize = 12, fontWeight = "bold", flexGrow = 1 }),
-        ui.glyph({ name = genresExpanded and "chevron-up" or "chevron-down", size = 14, color = "outline" }),
+        ui.glyph({ name = genresExpanded and "chevron-up" or "chevron-down", size = 14, color = "outline_variant" }),
       }))
       if genresExpanded then
         local chipRows = {}
@@ -1368,14 +1451,14 @@ renderDashboard = function()
         paddingH    = 8,
         paddingV    = 6,
         radius      = 7,
-        fill        = "surface_variant/0.5",
+        fill        = "surface_container/0.5",
         onClick     = function()
           decadesExpanded = not decadesExpanded
           render()
         end,
       }, {
         ui.label({ text = tr("panel.decades_title"), fontSize = 12, fontWeight = "bold", flexGrow = 1 }),
-        ui.glyph({ name = decadesExpanded and "chevron-up" or "chevron-down", size = 14, color = "outline" }),
+        ui.glyph({ name = decadesExpanded and "chevron-up" or "chevron-down", size = 14, color = "outline_variant" }),
       }))
       if decadesExpanded then
         local decadeRows = {}
@@ -1391,7 +1474,7 @@ renderDashboard = function()
 
       if #countries > 0 then
         table.insert(scrollChildren, ui.separator({}))
-        table.insert(scrollChildren, ui.label({ text = tr("panel.top_countries"), fontSize = 11, fontWeight = "bold", color = "outline" }))
+        table.insert(scrollChildren, ui.label({ text = tr("panel.top_countries"), fontSize = 11, fontWeight = "bold", color = "outline_variant" }))
         local topN = {}
         for i = 1, math.min(TOP_COUNTRIES, #countries) do
           table.insert(topN, countryCard(countries[i]))
@@ -1416,7 +1499,7 @@ renderDashboard = function()
             paddingH    = 8,
             paddingV    = 6,
             radius      = 7,
-            fill        = "surface_variant/0.5",
+            fill        = "surface_container/0.5",
             onClick     = function()
               countriesExpanded = not countriesExpanded
               if countriesExpanded then
@@ -1426,7 +1509,7 @@ renderDashboard = function()
             end,
           }, {
             ui.label({ text = tr("panel.all_countries", { count = tostring(remainingCount) }), fontSize = 12, fontWeight = "bold", flexGrow = 1 }),
-            ui.glyph({ name = countriesExpanded and "chevron-up" or "chevron-down", size = 14, color = "outline" }),
+            ui.glyph({ name = countriesExpanded and "chevron-up" or "chevron-down", size = 14, color = "outline_variant" }),
           }))
           if countriesExpanded then
             local last = math.min(#countries, TOP_COUNTRIES + countriesShown)
@@ -1494,12 +1577,12 @@ local function stationArt(thumb, size, fallbackGlyph)
     width   = artSize,
     height  = artSize,
     radius  = 4,
-    fill    = "surface_variant/0.65",
+    fill    = "surface_container/0.65",
     align   = "center",
     justify = "center",
     minWidth = artSize,
     minHeight = artSize,
-  }, { ui.glyph({ name = glyphName, size = glyphSize, color = "outline" }) })
+  }, { ui.glyph({ name = glyphName, size = glyphSize, color = "outline_variant" }) })
 end
 
 local function stationRow(s, sourceView)
@@ -1540,7 +1623,7 @@ local function stationRow(s, sourceView)
     }),
   }
   if metaText ~= "" then
-    table.insert(labels, ui.label({ text = metaText, fontSize = 11, color = "outline" }))
+    table.insert(labels, ui.label({ text = metaText, fontSize = 11, color = "outline_variant" }))
   end
   table.insert(parts, ui.column({
     width = 0,
@@ -1588,8 +1671,8 @@ local function stationRow(s, sourceView)
     paddingH = 6,
     paddingV = 1,
     radius  = 6,
-    fill        = isPlaying and "primary/0.12" or (isHovered and "surface_variant/0.55" or "surface_variant/0.4"),
-    border      = isPlaying and "primary/0.3" or "outline",
+    fill        = isPlaying and "primary/0.12" or (isHovered and "surface_container/0.55" or "surface_container/0.4"),
+    border      = isPlaying and "primary/0.3" or "outline_variant",
     borderWidth = (isHovered or isPlaying) and 1 or 0,
     minHeight   = 40,
     height      = 40,
@@ -1610,7 +1693,7 @@ renderCountry = function()
   end
   table.insert(headerParts, ui.column({ flexGrow = 1, gap = 0 }, {
     ui.label({ text = selectedName, fontSize = 15, fontWeight = "bold", maxLines = 1 }),
-    ui.label({ text = tr("panel.station_count", { count = tostring(countryCount(selectedCode)) }), fontSize = 11, color = "outline" }),
+    ui.label({ text = tr("panel.station_count", { count = tostring(countryCount(selectedCode)) }), fontSize = 11, color = "outline_variant" }),
   }))
   table.insert(children, ui.row({ gap = 8, align = "center" }, headerParts))
 
@@ -1668,7 +1751,7 @@ renderGenre = function()
       genreIcon,
       ui.column({ flexGrow = 1, gap = 0 }, {
         ui.label({ text = selectedGenre.name, fontSize = 15, fontWeight = "bold", maxLines = 1 }),
-        ui.label({ text = tr(selectedGenre.kind == "decade" and "panel.decade_stations" or "panel.genre_stations"), fontSize = 11, color = "outline" }),
+        ui.label({ text = tr(selectedGenre.kind == "decade" and "panel.decade_stations" or "panel.genre_stations"), fontSize = 11, color = "outline_variant" }),
       }),
     }))
   end
@@ -1725,7 +1808,7 @@ renderGlobalSearch = function()
     ui.glyph({ name = "search", size = 16, color = "primary" }),
     ui.column({ flexGrow = 1, gap = 0 }, {
       ui.label({ text = tr("panel.search_title"), fontSize = 15, fontWeight = "bold", maxLines = 1 }),
-      ui.label({ text = tr("panel.search_subtitle"), fontSize = 11, color = "outline" }),
+      ui.label({ text = tr("panel.search_subtitle"), fontSize = 11, color = "outline_variant" }),
     }),
   }))
 
@@ -1787,7 +1870,7 @@ renderCountrySearch = function()
   elseif countries ~= nil then
     local q = noctalia.string.trim(query):lower()
     if q == "" then
-      table.insert(scrollChildren, centeredLabel(tr("panel.search_countries_hint"), "outline"))
+      table.insert(scrollChildren, centeredLabel(tr("panel.search_countries_hint"), "outline_variant"))
     else
       local matches = {}
       for _, c in ipairs(countries) do
@@ -1816,7 +1899,7 @@ renderAllStations = function()
     ui.glyph({ name = "radio", size = 16, color = "primary" }),
     ui.column({ flexGrow = 1, gap = 0 }, {
       ui.label({ text = tr("panel.all_stations_title"), fontSize = 15, fontWeight = "bold", maxLines = 1 }),
-      ui.label({ text = tr("panel.station_count", { count = allStations ~= nil and tostring(#allStations) or "..." }), fontSize = 11, color = "outline" }),
+      ui.label({ text = tr("panel.station_count", { count = allStations ~= nil and tostring(#allStations) or "..." }), fontSize = 11, color = "outline_variant" }),
     }),
   }))
 
@@ -1857,7 +1940,7 @@ renderAllCountries = function()
     ui.glyph({ name = "world", size = 16, color = "primary" }),
     ui.column({ flexGrow = 1, gap = 0 }, {
       ui.label({ text = tr("panel.all_countries_title"), fontSize = 15, fontWeight = "bold", maxLines = 1 }),
-      ui.label({ text = tr("panel.all_countries_subtitle", { shown = tostring(math.min(allCountryShown, total)), total = tostring(total) }), fontSize = 11, color = "outline" }),
+      ui.label({ text = tr("panel.all_countries_subtitle", { shown = tostring(math.min(allCountryShown, total)), total = tostring(total) }), fontSize = 11, color = "outline_variant" }),
     }),
   }))
 
@@ -1899,7 +1982,7 @@ renderFavorites = function()
     ui.glyph({ name = "star-filled", size = 16, color = "warning" }),
     ui.column({ flexGrow = 1, gap = 0 }, {
       ui.label({ text = tr("panel.favorites_title"), fontSize = 15, fontWeight = "bold", maxLines = 1 }),
-      ui.label({ text = tr("panel.favorites_count", { count = tostring(#favorites) }), fontSize = 11, color = "outline" }),
+      ui.label({ text = tr("panel.favorites_count", { count = tostring(#favorites) }), fontSize = 11, color = "outline_variant" }),
     }),
   }))
 
@@ -1960,8 +2043,8 @@ local function customRow(s, index)
     paddingH = 6,
     paddingV = 1,
     radius  = 6,
-    fill        = isPlaying and "primary/0.12" or "surface_variant/0.4",
-    border      = isPlaying and "primary/0.3" or "outline",
+    fill        = isPlaying and "primary/0.12" or "surface_container/0.4",
+    border      = isPlaying and "primary/0.3" or "outline_variant",
     borderWidth = (isHovered or isPlaying) and 1 or 0,
     onHover = function(isHovering)
       hoveredKey = isHovering and key or nil
@@ -1977,7 +2060,7 @@ renderCustom = function()
     ui.glyph({ name = "broadcast", size = 16, color = "primary" }),
     ui.column({ flexGrow = 1, gap = 0 }, {
       ui.label({ text = tr("panel.custom_title"), fontSize = 15, fontWeight = "bold", maxLines = 1 }),
-      ui.label({ text = tr("panel.custom_count", { count = tostring(#customStations) }), fontSize = 11, color = "outline" }),
+      ui.label({ text = tr("panel.custom_count", { count = tostring(#customStations) }), fontSize = 11, color = "outline_variant" }),
     }),
     ui.button({
       glyph       = "plus",
@@ -1990,8 +2073,8 @@ renderCustom = function()
 
   if #customStations == 0 then
     table.insert(children, ui.column({ gap = 10, align = "center", padding = 32, flexGrow = 1, justify = "center" }, {
-      ui.glyph({ name = "broadcast", size = 32, color = "outline" }),
-      ui.label({ text = tr("panel.custom_empty"), color = "outline", textAlign = "center" }),
+      ui.glyph({ name = "broadcast", size = 32, color = "outline_variant" }),
+      ui.label({ text = tr("panel.custom_empty"), color = "outline_variant", textAlign = "center" }),
     }))
   else
     local rows = {}
@@ -2012,7 +2095,7 @@ renderAddCustom = function()
     ui.glyph({ name = isEdit and "pencil" or "plus", size = 16, color = "primary" }),
     ui.column({ flexGrow = 1, gap = 0 }, {
       ui.label({ text = isEdit and tr("panel.edit_custom_title") or tr("panel.add_custom_title"), fontSize = 15, fontWeight = "bold", maxLines = 1 }),
-      ui.label({ text = tr("panel.add_custom_subtitle"), fontSize = 11, color = "outline" }),
+      ui.label({ text = tr("panel.add_custom_subtitle"), fontSize = 11, color = "outline_variant" }),
     }),
   }))
 
