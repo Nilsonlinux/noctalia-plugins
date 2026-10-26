@@ -77,6 +77,13 @@ entry = "widget.luau"
   description_key = "settings.glyph.description"
   default         = "rss"
 
+  [[widget.setting]]
+  key             = "show_feed_images"
+  type            = "bool"
+  label_key       = "settings.show_feed_images.label"
+  description_key = "settings.show_feed_images.description"
+  default         = true
+
 # ---------------------------------------------------------------------------
 # Panel: popup with the item list, opened by clicking the widget
 # ---------------------------------------------------------------------------
