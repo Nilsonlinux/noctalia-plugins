@@ -9,7 +9,7 @@ local TOP_COUNTRIES = 12
 local SEARCH_DEBOUNCE_MS = 350
 local FAV_ANIM_MS = 500
 local API_BASE = "https://de1.api.radio-browser.info"
-local USER_AGENT = "nilsonlinux/world-radio/1.1.1"
+local USER_AGENT = "nilsonlinux/world-radio/1.1.2"
 
 local GENRES = {
   { name = "Rock",      icon = "guitar-pick", tag = "rock" },

@@ -92,7 +92,8 @@ Open the panel directly with:
 noctalia msg panel-toggle nilsonlinux/world-radio:Panel
 ```
 
-or click the radio widget (`radio`) placed in the bar.
+or click the radio widget (`radio`) placed in the bar. The panel opens as a
+floating window centered on the screen by default.
 
 1. **Dashboard** - search or scroll the country list; the stat cards show the
    total of stations and countries with a count-up animation on open. Tap a
@@ -152,7 +153,7 @@ turns each new id into an MPRIS Next (`dir = 1`) or Previous (`dir = -1`).
 - **Network calls** - the plugin talks to `radio-browser.info`
   (`de1.api.radio-browser.info`) using `/json/countries`, `/json/stats`, and
   `/json/stations/search` (`hidebroken=true`, ordered by votes) with a
-  `User-Agent` of `nilsonlinux/world-radio/1.1.1`. No credentials are sent.
+  `User-Agent` of `nilsonlinux/world-radio/1.1.2`. No credentials are sent.
 - **Processes** - playback spawns `mpv` (or `ffplay`) per station; the PID is
   stored in `player.pid` so the next play/Stop kills it cleanly. mpv is given
   the whole queue as `--playlist` with `--loop-playlist=force`, so its MPRIS
